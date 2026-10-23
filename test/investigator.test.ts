@@ -631,6 +631,28 @@ describe('evidence that does not fit the model', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('shows a piece that fits the limit exactly and drops one that is a character over', async () => {
+    const input = theCase({ evidence: [{ id: 'evt-1', content: { a: 1 } }] });
+    const probe = make(none());
+    await probe.investigator.investigate(input);
+    const user = (probe.seen[0] as { request: ModelRequest }).request.user;
+    const caseBlock = new RegExp(`<case-${NONCE}>\\n([^\\n]*)\\n`).exec(user)?.[1] as string;
+    const piece = new RegExp(`<evidence-${NONCE}>\\n\\[([^\\n]*)\\]\\n`).exec(user)?.[1] as string;
+    // The room for evidence is the limit, less the case block and 400 characters for the fixed text.
+    const exact = caseBlock.length + 400 + piece.length + 3;
+
+    for (const [limit, shown] of [[exact, true], [exact - 1, false]] as const) {
+      const sized = createModelRegistry([
+        { id: 'sized', provider: 'selfhosted', family: 'tiny', tier: 'large', endpoint: 'https://sized.internal.example.invalid/v1/chat/completions', handling: 'self-hosted', maxInputChars: limit },
+      ]);
+      const seen: ModelRequest[] = [];
+      const client: ModelClient = { model: sized.require('sized'), async complete(request) { seen.push(request); return none(); } };
+      const result = await new Investigator({ id: 'i', client, nonce: () => NONCE }).investigate(input);
+      expect(seen.length === 1).toBe(shown);
+      expect(result.status).toBe(shown ? 'ok' : 'ModelInputError');
+    }
+  });
+
   it('counts the case block against the limit', async () => {
     const { investigator, seen } = make(none(), {}, 'tiny');
     const targets = Array.from({ length: MAX_CASE_TARGETS }, (_, i) => ({ target: `service-number-${i}-${'x'.repeat(60)}`, kinds: ['contain.rate-limit' as const] }));
