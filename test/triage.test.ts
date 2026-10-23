@@ -149,6 +149,49 @@ describe('what the model is shown', () => {
   });
 });
 
+describe('how the evidence budget is shared', () => {
+  const shownBy = async (modelId: string, list: TriageItem[]) => {
+    const { client, seen } = stub(modelId, answer(list.map((it) => [it.id, 'routine'])));
+    const result = await new TriageDog({ clients: [client], nonce: () => NONCE }).review(list);
+    const user = (seen[0] as { request: ModelRequest }).request.user;
+    const open = `<items-${NONCE}>\n`;
+    const shown = JSON.parse(user.slice(user.indexOf(open) + open.length, user.indexOf(`\n</items-${NONCE}>`))) as { evidence: Record<string, unknown> }[];
+    return { result, shown };
+  };
+
+  it('splits the model\'s limit between the items, so the batch as a whole stays inside it', async () => {
+    // 'tiny' takes 300 characters of evidence. Four items of about 100 each would fit one by one, not together.
+    const list = items(4).map((it) => ({ ...it, evidence: { text: 'x'.repeat(90) } }));
+    const { result, shown } = await shownBy('tiny', list);
+    expect(shown.every((entry) => '_cut' in entry.evidence)).toBe(true);
+    const total = shown.reduce((sum, entry) => sum + (entry.evidence['_cut'] as string).length, 0);
+    expect(total).toBeLessThanOrEqual(300);
+    expect(result.verdicts.every((v) => v.decision === 'escalate' && v.source === 'fallback')).toBe(true);
+  });
+
+  it('calls evidence that exactly fills its share fully seen, and one character more cut', async () => {
+    const exact = (n: number) => {
+      // {"t":"..."} is 8 characters around the text.
+      return { t: 'x'.repeat(n - 8) };
+    };
+    const fits = await shownBy('tiny', [item(1, { evidence: exact(300) })]);
+    expect(JSON.stringify(fits.shown[0]?.evidence)).toHaveLength(300);
+    expect(fits.result.verdicts[0]).toMatchObject({ decision: 'routine', source: 'model' });
+    const over = await shownBy('tiny', [item(1, { evidence: exact(301) })]);
+    expect(over.shown[0]?.evidence).toHaveProperty('_cut');
+    expect(over.result.verdicts[0]).toMatchObject({ decision: 'escalate', source: 'fallback' });
+  });
+
+  it('never cuts in the middle of a surrogate pair', async () => {
+    for (const extra of [0, 1]) {
+      const { shown } = await shownBy('tiny', [item(1, { evidence: '😀'.repeat(300 + extra) })]);
+      const cut = (shown[0]?.evidence['_cut'] as string);
+      expect(cut).not.toMatch(/[\ud800-\udbff]$/);
+      expect(cut).not.toMatch(/^[\udc00-\udfff]/);
+    }
+  });
+});
+
 describe('parseTriageReply', () => {
   const ids = new Set(['a', 'b', 'c']);
 
