@@ -15,6 +15,7 @@
   "types": "dist/src/index.d.ts",
   "files": [
     "dist",
+    "!dist/examples",
     "schemas"
   ],
   "scripts": {
@@ -22,7 +23,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "demo": "npm run build && node dist/examples/demo.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

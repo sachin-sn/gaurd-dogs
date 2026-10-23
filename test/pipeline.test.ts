@@ -374,6 +374,8 @@ describe('pipeline: advisories', () => {
     expect(report).toMatchObject({ received: 1, findings: 1, rejected: 0, proposals: { applied: 2 } });
     const alert = sent.find((n) => n.kind === 'alert');
     expect(alert?.summary).toContain('high advisory GD-EXAMPLE-0001 affects example-lib 1.2.0 on shop-web, fixed in 1.4.2');
+    // The gate summary keeps only the start of a reason, so check the start of the clause.
+    expect(alert?.summary).toContain('Intel: from allow-listed source "example-advisory-feed"');
     expect(pipeline.knowsEvidence('GD-EXAMPLE-0001')).toBe(true);
   });
 

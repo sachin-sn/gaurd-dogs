@@ -325,12 +325,17 @@ export function evaluateAction(raw: unknown, ctx: GateContext, policy: GatePolic
       ? ''
       : `Panel: ${count.approve} of ${count.panelSize} approved (${count.required} needed), ` +
         `${count.reject} rejected, ${count.silent} did not vote. `;
-  const summaryFor = (outcome: GateOutcome): string =>
-    (flagged ? 'Review needed: ' : '') +
-    `Level ${action.level} ${action.kind} on ${sanitizeEvidence(action.target, 80)}: ${OUTCOME_TEXT[outcome]}. ` +
-    panelNote +
-    (flagged ? 'Several guard dogs flagged this, too few to act on. ' : '') +
-    `Reason given: ${sanitizeEvidence(action.reason, 160)}`;
+  // A flag with the action running can only mean a human has since approved it, so the warning is over.
+  const summaryFor = (outcome: GateOutcome): string => {
+    const warn = flagged && outcome !== 'execute';
+    return (
+      (warn ? 'Review needed: ' : '') +
+      `Level ${action.level} ${action.kind} on ${sanitizeEvidence(action.target, 80)}: ${OUTCOME_TEXT[outcome]}. ` +
+      panelNote +
+      (warn ? 'Several guard dogs flagged this, too few to act on. ' : '') +
+      `Reason given: ${sanitizeEvidence(action.reason, 160)}`
+    );
+  };
 
   const base = {
     actionId: sanitizeEvidence(action.id, 128),

@@ -415,7 +415,7 @@ export class Pipeline {
         (finding.needsHumanVerification
           ? 'Critical and unverified: a human must verify it before any containment. '
           : '') +
-        `${finding.reasons.map((r) => sanitizeEvidence(r, 120)).join('; ')}. ` +
+        `Intel: ${finding.reasons.map((r) => sanitizeEvidence(r, 120)).join('; ')}. ` +
         `Details: ${sanitizeEvidence(finding.link, 200)}`
       ).slice(0, 1000),
       evidence: [finding.recordId],

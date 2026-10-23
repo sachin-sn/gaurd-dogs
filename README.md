@@ -85,6 +85,7 @@ flowchart LR
 | `src/models/` | **Model registry and panel planner.** The only models a guard dog may call, each with one validated HTTPS endpoint. Plans which model sits behind which seat (providers and families spread, data handling per view), derives the egress allow-list from the models in use, and reports what a panel depends on. Configuration decides; a dog or the evidence never does. | Tested |
 | `src/executor/` | **Executor.** The only way a proposal becomes a change. Audits before acting and fails closed, expires and reverts containment, limits how much automatic containment can run, refuses a repeated action id, and recovers its state from the audit log after a restart. Real controls plug in as adapters. | Tested |
 | `src/pipeline/` | **Sidecar pipeline.** Takes raw events and staged informer records and runs them through masking, tier 1, alert throttling and the executor. Caps how many different alerts go out per window, so fabricated events cannot bury a real alert. Gives the gate a per-proposal snapshot of the evidence it may cite. Includes a bounded JSONL reader. | Tested |
+| `examples/demo.ts` | **Offline demo.** The whole flow end to end with scripted stand-in dogs. Also run by the tests. | Tested |
 | `fixtures/` | Synthetic records, events and actions. Nothing here is a real advisory or a working exploit. | |
 
 Not built yet: the sidecar processes themselves (tailing logs and shipping events to the pipeline), the guard dogs that call models (tier 2 triage and the tier 3 panel members), the probe patrol, and the evaluation testbed.
@@ -98,6 +99,14 @@ npm install
 npm run check   # typecheck and run the tests
 npm run build
 ```
+
+Try the whole thing offline:
+
+```sh
+npm run demo
+```
+
+Nothing calls a model or the network. The guard dogs in the demo are scripted stand-ins whose votes are set per scene; the model registry and planner, masking, throttling, panel runner, response gate, executor, human approval and expiry are the real code. It walks through a burst of webshell uploads becoming one alert, four of seven dogs agreeing and the rest being stopped, three against four being rejected while a human is still told, two silent dogs sending a decision to a person, and containment expiring. The tests run it too, so it cannot drift from the code.
 
 Example: match an advisory against what you run.
 
