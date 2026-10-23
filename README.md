@@ -21,7 +21,7 @@ Where a layer is already protected (a WAF, an API gateway), the guard dog watche
 | Principle | What it means here |
 | --- | --- |
 | Tiered detection | Tier 1 deterministic rules, tier 2 small-model triage, tier 3 LLM investigator. Higher tiers see less volume and cost more. |
-| Investigators propose, never execute | A response gate executes. A panel of **at least two** guard dogs must agree before any containment. A split goes to a human. |
+| Investigators propose, never execute | A response gate executes. At least two guard dogs patrol as a panel, and a **majority of the whole panel** must agree before any containment (2 of 2, 2 of 3, 3 of 5, 4 of 7). If too few agree to act but a sizeable minority flagged it, nothing runs and a human is alerted anyway. |
 | Graduated response | 1 observe, 2 alert, 3 contain (reversible, expiring), 4 contain (disruptive, human approval). Every proposed action notifies a human. |
 | The fort | Guard dogs are never publicly exposed. They pull from a staging zone; nothing is pushed in. Egress is allow-listed. |
 | Informers | Agents and humans outside the wall emit **structured records only**. Critical intel needs human verification before guard dogs act on it. |

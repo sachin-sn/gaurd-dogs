@@ -8,8 +8,8 @@ These are the rules the code already enforces, with pointers to where. The wider
 | --- | --- | --- |
 | 1 | Observe (for example raise sampling) | None |
 | 2 | Alert a human | None |
-| 3 | Contain, reversible | Pre-approved policy, `reversible: true`, an expiry (`ttlSeconds`), and at least two votes |
-| 4 | Contain, disruptive | `requiresHumanApproval: true` and at least two votes |
+| 3 | Contain, reversible | Pre-approved policy, `reversible: true`, an expiry (`ttlSeconds`), and votes from the panel (the schema requires at least two) |
+| 4 | Contain, disruptive | `requiresHumanApproval: true` and votes from the panel (at least two) |
 
 The schema checks the shape (`schemas/action.schema.json`): reversible and expiring at level 3, human approval flagged at level 4, at least two votes. The response gate (`src/gate/`, below) checks what a schema cannot: that voters are distinct panel members, that the kind matches the level, and everything else in the next section.
 
@@ -27,7 +27,7 @@ Investigators propose, the gate decides, and a separate executor acts. `evaluate
 - The kind needs a higher level than the one claimed. A disruptive action labelled level 1 is denied, not run.
 - A level 3 or 4 proposal cites evidence the gate does not know. This catches an investigator inventing its evidence.
 - A vote comes from someone who is not on the panel, or the same guard dog votes twice.
-- The panel voted against it.
+- A majority of the panel voted against it.
 
 **Held for a human.** A person can clear these:
 
@@ -35,13 +35,19 @@ Investigators propose, the gate decides, and a separate executor acts. `evaluate
 - The evidence cited allows only a lower level until a human verifies it (the intel ceiling from `ExposureFinding.maxLevel`; the lowest ceiling among everything cited wins).
 - Policy does not pre-approve the kind, the duration is longer than policy allows, or the target is outside the pre-approved scope.
 - The target is protected (the guard dogs' own services, the audit log, the alert sink).
-- The panel is split, or it agrees but all the approvers share one model.
+- Neither side has a majority, or a majority agrees but all the approvers share one model.
 
-**Panel rule (proposed, not yet confirmed).** With two guard dogs, both must approve and a split goes to a human. With three or more, a majority approves. Abstaining or not voting counts as neither. By default, the approving members must span at least two models, so one model's blind spot cannot approve alone. All of this is policy (`createGatePolicy`), so it can be changed.
+**Panel rule.** At least two guard dogs run as a panel, and acting needs a **majority of the whole panel**, not of the votes that came back: 2 of 2, 2 of 3, 3 of 5, 4 of 7. A dog that abstains or does not answer has not agreed. If a majority rejects, the proposal is denied. If neither side has a majority, it waits for a human. `rule: 'unanimous'` is available as a stricter policy. By default, the approving members must span at least two models, so one model's blind spot cannot approve alone. All of this is policy (`createGatePolicy`), so it can be changed.
+
+**Minority alert.** If too few dogs approve to act, but at least `dissentAlertMin` did, nothing runs and a human is alerted anyway: the summary starts "Review needed", and the decision carries the code `minority-flag`. The default threshold is a third of the panel and never fewer than two, so 2 of 5 and 3 of 7 raise the alert and a single dog does not. With 7 dogs, 3 approving and 4 rejecting is denied, and a human is told. Every decision from a vote carries the count (`votes`: approve, reject, silent, required, panelSize), and the audit entry stores it.
+
+**Panel size and latency.** A panel has two to nine dogs (`MAX_PANEL_SIZE`). Odd sizes avoid ties, and three or five is the sensible range. Every dog is a model call that the decision waits on, and the gain shrinks fast: if each dog errs independently 20% of the time, a majority is right about 90% of the time with 3 dogs, 94% with 5, 97% with 7 and 98% with 9. That assumes independent errors, which dogs on one model are not. The latency cost is reduced by how the panel is run (the panel runner is not built yet): ask all dogs in parallel, decide as soon as the outcome cannot change (enough approvals to act, or enough rejections that approval is impossible), and stop waiting for silent dogs after a deadline. Silence never counts as agreement. Patrolling is separate from voting: many dogs can patrol different layers, while each finding goes to one panel.
+
+**Model diversity.** Dogs on one model share its blind spots, and one crafted log line can fool every one of them. The gate therefore requires the approving dogs to span at least two models (`requireDistinctModels`, on by default), and members can be given different views of the evidence (raw logs, summaries, a timeline). Different prompts or temperatures on the same model do not count as different models. Whether mixed panels really resist injection better is a question for the evaluation testbed.
 
 **Human approval.** An approval names the approver and the action's digest (`actionDigest`: id, level, kind, target, reason, evidence and duration, but not votes or timestamps). It is accepted only from a listed approver, for that exact action, within the policy's validity window. Change the target or the reason and the approval no longer applies.
 
-**Policy checks at creation.** A panel needs two distinct members. Only reversible containment kinds can be pre-approved, a bare `*` target is refused, and durations are bounded. Scopes use a simple glob (`*` only), not regular expressions.
+**Policy checks at creation.** A panel needs two to nine distinct members. Only reversible containment kinds can be pre-approved, a bare `*` target is refused, and durations are bounded. Scopes use a simple glob (`*` only), not regular expressions.
 
 A test walks every combination of level, votes, ceiling, target and approval, and asserts the gate says `execute` without a human only for a level 3 action backed by an agreeing, diverse panel within scope and ceiling.
 

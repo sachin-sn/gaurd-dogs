@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:guard-dogs:schema:action:v0",
   "title": "ProposedAction",
-  "description": "An action proposed by a guard dog. Investigators only propose; a response gate executes. Levels: 1 observe, 2 alert, 3 contain (reversible, pre-approved policy, with expiry), 4 contain (disruptive, human approval required). Levels 3 and 4 need a panel of at least two votes. Distinct voters are enforced by the response gate, not by this schema.",
+  "description": "An action proposed by a guard dog. Investigators only propose; a response gate executes. Levels: 1 observe, 2 alert, 3 contain (reversible, pre-approved policy, with expiry), 4 contain (disruptive, human approval required). Levels 3 and 4 need votes from the panel (at least two). Whether enough guard dogs agreed (a majority of the whole panel) and whether voters are distinct panel members are enforced by the response gate, not by this schema.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "proposedBy", "level", "kind", "target", "reason", "evidence", "createdAt"],
