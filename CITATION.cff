@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Guard Dogs: An Active Patrol Layer for Web Runtimes in the AI-Attacker Era"
+type: software
+version: 0.0.1
+abstract: >-
+  An agent-based active security layer for web runtimes (Node, PHP). Guard dog
+  sidecars patrol each backend layer for exposure, drift and probe-detectable
+  weaknesses, escalate through tiered detection, and respond with graduated,
+  panel-approved actions that keep humans in the loop. Early research prototype.
+authors:
+  - alias: sachin-sn
+repository-code: "https://github.com/sachin-sn/gaurd-dogs"
+license: Apache-2.0
+keywords:
+  - security
+  - agents
+  - web runtimes
+  - intrusion detection
+  - llm

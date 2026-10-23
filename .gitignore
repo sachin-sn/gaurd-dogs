@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+# Local audit logs and scratch output from demos
+*.audit.jsonl
+.scratch/

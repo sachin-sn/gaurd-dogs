@@ -1,0 +1,11 @@
+{
+  "id": "GD-EXAMPLE-0002",
+  "ecosystem": "composer",
+  "package": "vendor/example-package",
+  "affected": "<2.1.0",
+  "severity": "critical",
+  "source": "example-advisory-feed",
+  "link": "https://example.invalid/advisories/GD-EXAMPLE-0002",
+  "publishedAt": "2026-10-20T08:00:00Z",
+  "verification": { "status": "verified" }
+}

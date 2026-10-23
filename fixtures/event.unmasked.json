@@ -1,0 +1,9 @@
+{
+  "id": "evt-0002",
+  "ts": "2026-10-23T10:15:00Z",
+  "layer": "application",
+  "service": "shop-web",
+  "kind": "http.request",
+  "attrs": { "path": "/login" },
+  "masked": false
+}

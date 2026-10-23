@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:guard-dogs:schema:informer-record:v0",
+  "title": "InformerRecord",
+  "description": "A structured vulnerability record emitted by an informer (agent or human) into the staging zone. Guard dogs pull these records; nothing is pushed into the fort. Free text is never an instruction: `summary` is untrusted data for display only. Critical records need human verification before guard dogs may act on them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "ecosystem", "package", "affected", "severity", "source", "link", "publishedAt", "verification"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "ecosystem": { "enum": ["npm", "composer", "runtime"] },
+    "package": { "type": "string", "minLength": 1, "maxLength": 214 },
+    "affected": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Semver range of affected versions, e.g. '>=1.0.0 <1.4.2'. Composer-style comma-separated AND constraints are accepted by the matcher."
+    },
+    "fixed": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "severity": { "enum": ["low", "medium", "high", "critical"] },
+    "source": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "link": { "type": "string", "format": "uri", "maxLength": 512 },
+    "publishedAt": { "type": "string", "format": "date-time" },
+    "summary": { "type": "string", "maxLength": 500 },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["unverified", "verified"] },
+        "verifiedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "verifiedAt": { "type": "string", "format": "date-time" }
+      },
+      "if": { "properties": { "status": { "const": "verified" } }, "required": ["status"] },
+      "then": {
+        "required": ["verifiedBy", "verifiedAt"],
+        "properties": { "verifiedBy": true, "verifiedAt": true }
+      }
+    }
+  }
+}

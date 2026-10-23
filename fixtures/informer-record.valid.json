@@ -1,0 +1,13 @@
+{
+  "id": "GD-EXAMPLE-0001",
+  "ecosystem": "npm",
+  "package": "example-lib",
+  "affected": ">=1.0.0 <1.4.2",
+  "fixed": "1.4.2",
+  "severity": "high",
+  "source": "example-advisory-feed",
+  "link": "https://example.invalid/advisories/GD-EXAMPLE-0001",
+  "publishedAt": "2026-10-20T08:00:00Z",
+  "summary": "Synthetic record used for tests. Not a real advisory.",
+  "verification": { "status": "unverified" }
+}

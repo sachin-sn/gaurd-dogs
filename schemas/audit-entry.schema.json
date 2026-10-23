@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:guard-dogs:schema:audit-entry:v0",
+  "title": "AuditEntry",
+  "description": "One line of the append-only, hash-chained audit log. `hash` is the lowercase hex SHA-256 of the canonical JSON (sorted keys, no whitespace, RFC 8785 style) of the entry without its `hash` field. `prev` is the previous entry's hash; the first entry uses 64 zeros. The format is language-neutral so PHP and other sidecars can write and verify the same chain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["seq", "ts", "actor", "type", "data", "prev", "hash"],
+  "properties": {
+    "seq": { "type": "integer", "minimum": 0 },
+    "ts": { "type": "string", "format": "date-time" },
+    "actor": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "type": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "data": {},
+    "prev": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

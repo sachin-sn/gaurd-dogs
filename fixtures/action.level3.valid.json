@@ -1,0 +1,16 @@
+{
+  "id": "act-0001",
+  "proposedBy": "dog-a",
+  "level": 3,
+  "kind": "contain.rate-limit",
+  "target": "shop-web:/upload",
+  "reason": "Repeated executable uploads from one source in two minutes.",
+  "evidence": ["evt-0001", "GD-EXAMPLE-0001"],
+  "createdAt": "2026-10-23T10:16:00Z",
+  "reversible": true,
+  "ttlSeconds": 900,
+  "votes": [
+    { "voter": "dog-a", "decision": "approve" },
+    { "voter": "dog-b", "decision": "approve" }
+  ]
+}

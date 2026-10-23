@@ -1,0 +1,13 @@
+{
+  "id": "act-0002",
+  "proposedBy": "dog-a",
+  "level": 3,
+  "kind": "contain.rate-limit",
+  "target": "shop-web:/upload",
+  "reason": "A panel of one is not a panel.",
+  "evidence": ["evt-0001"],
+  "createdAt": "2026-10-23T10:16:00Z",
+  "reversible": true,
+  "ttlSeconds": 900,
+  "votes": [{ "voter": "dog-a", "decision": "approve" }]
+}
