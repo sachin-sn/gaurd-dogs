@@ -89,6 +89,12 @@ describe('TriageDog construction and input', () => {
     await expect(dog.review([item(1, { id: '' })])).rejects.toThrow(/id of 1 to 128/);
     await expect(dog.review([item(1, { id: 'x'.repeat(129) })])).rejects.toThrow(/id of 1 to 128/);
     expect(seen).toHaveLength(0);
+    // The limit itself is allowed.
+    await expect(dog.review(items(3))).resolves.toMatchObject({ verdicts: expect.arrayContaining([]) as unknown });
+    expect(seen).toHaveLength(1);
+    const full = stub('claude-small', all('routine', MAX_TRIAGE_ITEMS));
+    expect((await new TriageDog({ clients: [full.client] }).review(items(MAX_TRIAGE_ITEMS))).routine).toBe(MAX_TRIAGE_ITEMS);
+    await expect(new TriageDog({ clients: [full.client] }).review(items(MAX_TRIAGE_ITEMS + 1))).rejects.toThrow(/1 to 20 items/);
   });
 });
 

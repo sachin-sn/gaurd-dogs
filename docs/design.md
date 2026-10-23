@@ -86,7 +86,7 @@ Dogs that were not needed are recorded as `not-needed` abstentions, so the audit
 
 **The registry** (`createModelRegistry`, `src/models/registry.ts`) lists the models that may be used. Each has an id, a provider, a family (its lineage; models of one family share blind spots), a tier (`small` for triage, `large` for investigation and votes on containment), one HTTPS endpoint, a data handling level (`standard`, `zero-retention`, `self-hosted`) and a limit on how much evidence one call may carry. Validation is strict because the endpoint is where logs go: HTTPS only, a host name rather than an IP address, no credentials, query string or fragment (that is where keys end up in logs), and no backslashes, whitespace or extra slashes, which different URL parsers read differently. The endpoint is stored in canonical form, so the host on the egress allow-list and the host actually contacted cannot differ. `egressHosts()` gives the hosts for `RulesConfig.guardDogEgress`, so that allow-list is derived from the models in use instead of kept by hand. Data handling is attested by whoever deploys; the registry cannot check it.
 
-**Which stage uses which model.** Tier 1 uses no model. Tier 2 (not built yet) is one small model that can only escalate, never act. Tier 3 is the panel: every dog votes on every finding, using a large model, up to nine dogs. Which model sits behind which seat is fixed when the panel is planned, not per finding.
+**Which stage uses which model.** Tier 1 uses no model. Tier 2 is one to three small models that can only escalate, never act (see Tier 2 triage). Tier 3 is the panel: every dog votes on every finding, using a large model, up to nine dogs. Which model sits behind which seat is fixed when the panel is planned, not per finding.
 
 **Planning a panel** (`planPanel`) is deterministic and spreads the seats over providers first and model families second:
 
@@ -129,7 +129,25 @@ task (action + this dog's evidence view)
 
 **Three protocols.** `anthropic` (Messages API), `gemini` (`generateContent`) and `openai-compatible` (chat completions, which also covers self-hosted servers such as vLLM and Ollama). Keys go in headers, never in the URL, which the registry forbids from carrying a query string. No sampling settings are sent, because newer models refuse them. The adapters follow each provider's documentation and are tested against fakes of its response shape, and the transport against a real local server; they have not been run against the live services.
 
-**Limits.** The tier 2 triage dog is not built; it will reuse the client, prompt and reply parsing with a different question. A model can still be talked into a wrong vote; the defence is the panel. The `gemini` adapter sends the key in a header, which is supported but is not the form in every example in Google's reference pages.
+**Limits.** A model can still be talked into a wrong vote; the defence is the panel. The `gemini` adapter sends the key in a header, which is supported but is not the form in every example in Google's reference pages.
+
+## Tier 2 triage
+
+`TriageDog` (`src/dogs/triage.ts`) reads a batch of up to 20 flags from tier 1 and says, for each, `escalate` (worth a full investigation by the panel) or `routine`. It reuses the model clients, the prompt hardening and the strict reply reading from the model-backed dogs.
+
+**It can only add attention.** Its output is one of two words for an item tier 1 already flagged. It cannot propose an action, name a target or cite evidence, and `routine` suppresses nothing: the alert for the item has already gone to a human before triage runs. Being fooled costs a missed investigation of something a human was already told about, or one wasted investigation.
+
+**Dismissal has to be earned.** An item is `routine` only if every model looked at all of it and said so. A model that failed, timed out, was cancelled, answered nonsense, skipped the item or saw the evidence cut to fit its limit does not get to dismiss it. What such an item gets is `onFailure`, which defaults to `escalate`: the cost of a wasted investigation is bounded, the cost of a missed attack is not. Taking down or flooding tier 2 therefore buys an attacker more investigations, not fewer, and those have their own budget. Set `onFailure: 'routine'` to make it the other way round.
+
+**Several models, any one can escalate.** With two or three clients, an item is escalated if any of them says so. To get an item dismissed an attacker has to fool every model with one payload, while fooling one gains nothing. Use models of different families. The models must be distinct, and the number is capped at three.
+
+**The reply is read strictly.** The whole reply must be one JSON object with a `results` list (the same rule as for votes: prose around JSON is never searched for JSON). Entries for ids that were not asked about, or that are malformed, are ignored: they can add nothing, and an item they were meant for is treated as skipped. If an item appears twice, escalate wins. Give triage clients a `maxOutputTokens` of about 1,500 so a full batch fits.
+
+**The flags are data.** The same delimited, escaped JSON block as for votes, with a random token in the tag. The evidence budget (the model's `maxInputChars`) is split evenly between the items, and an item cut to its share is marked as cut in the prompt and counts as not seen in full.
+
+**Audit.** One `triage.review` entry per batch: how many items, how many escalated, how many were settled by the fallback, and each model's status (`ok`, `timed-out`, `cancelled` or the error's name). Counts only, never the flags, their evidence or a model's reasons.
+
+**Limits.** Triage looks at what tier 1 flagged. It does not read the event stream, so it cannot find what no rule noticed. It is not yet wired to anything: the investigators that turn an escalation into a proposed action are the next piece.
 
 ## Executor
 
