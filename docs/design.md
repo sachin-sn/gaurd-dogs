@@ -45,7 +45,31 @@ Investigators propose, the gate decides, and a separate executor acts. `evaluate
 
 A test walks every combination of level, votes, ceiling, target and approval, and asserts the gate says `execute` without a human only for a level 3 action backed by an agreeing, diverse panel within scope and ceiling.
 
-Not in the gate yet: limits on how many actions run in a window, and the executor that carries decisions out and undoes containment when it expires.
+The gate does not rate-limit or keep state. That is the executor's job (next section).
+
+## Executor
+
+`Executor.submit` (`src/executor/executor.ts`) is the only way a proposal becomes a change. It runs every proposal through the gate, so there is no path around it, and acts through a `ControlAdapter` per action kind (a WAF rule, a firewall call). The adapters are the only code that touches a real control.
+
+**Fail closed, audit first.** The gate decision is written to the audit log before anything happens, and a second entry (`containment.applying`) records the intent to act. If either write fails, nothing runs and a human is told. If a change goes live but the result cannot be recorded, the executor undoes it at once, because an unrecorded change is one nothing would ever undo.
+
+**Every containment has an owner for its undo.** Level 3 actions carry an expiry. `tick()` reverts what has expired and keeps what it cannot revert: a failed revert is retried on the next tick and reported to a human on the first failure and every tenth after. A human approver can `revoke` early. A level 4 action approved without a duration has no expiry, so only a human ends it.
+
+**Budget.** Automatic containment is limited so that a flood of proposals, or an attacker steering the guard dogs, cannot contain the whole estate. Defaults: 5 active at once, 1 per target, 10 starts per 10 minutes. A proposal over budget is held for a human (`rate-limited`) and reported. A human approval is exempt from the budget, and does not use up the automatic start rate. Level 1 and 2 actions do not count.
+
+**An id runs once.** Once an action id has been cleared, the same id is refused. Approvals cannot be replayed. The same held proposal sent again is reported as already waiting, without logging or notifying twice; a different proposal under a waiting id is a duplicate. Checks and claims happen in one synchronous step, so two submissions at the same moment cannot both pass the same duplicate or budget check.
+
+**Human approval path.** Held proposals wait for `approve`, which asks the gate again with the approval attached. An approval that does not check out leaves the proposal waiting; it cannot slip a rate-limited proposal past the budget. Only listed approvers can `reject` or `revoke`. The queue of waiting proposals is bounded, and dropping one tells a human.
+
+**Restart.** `recover()` verifies the audit log (and refuses to start if it fails), then rebuilds what is active, which ids have run, and which changes are `uncertain`: an intent was logged but the log never says what happened. Uncertain changes are reported to a human, who checks the control by hand and calls `resolveUncertain`. A proposal the budget held back is not counted as run, so it can be proposed again. Waiting proposals are not stored in the log and are lost on restart; the investigators propose them again.
+
+**Notifications** are best effort with a timeout, so a slow or broken notifier cannot stall the executor. Failures are logged.
+
+Audit entry types written by the executor: `gate.decision`, `containment.applying`, `containment.applied`, `containment.apply-failed`, `containment.reverted`, `containment.revert-failed`, `containment.resolved`, `executor.rate-limited`, `executor.rejected`, `executor.duplicate`, `executor.no-adapter`, `executor.notify-failed`.
+
+Adapters must make `apply` all-or-nothing and `revert` safe to call more than once.
+
+Not in the executor yet: throttling and de-duplicating alerts (a noisy source can still produce many notifications), and persistence of waiting proposals beyond the audit log.
 
 ## Trust boundary for informer records
 

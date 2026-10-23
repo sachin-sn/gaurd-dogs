@@ -288,7 +288,7 @@ export function evaluateAction(raw: unknown, ctx: GateContext, policy: GatePolic
 }
 
 /** Record a decision in the audit log. Only the decision is stored, never free text from the proposal. */
-export function auditDecision(log: AuditLog, decision: GateDecision, actor = 'response-gate'): AuditEntry {
+export function auditDecision(log: Pick<AuditLog, 'append'>, decision: GateDecision, actor = 'response-gate'): AuditEntry {
   return log.append({
     actor,
     type: 'gate.decision',
