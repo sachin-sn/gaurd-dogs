@@ -103,6 +103,34 @@ It refuses to plan a panel that cannot be mixed, with fewer than two families af
 
 **Limits.** That different providers err independently is an assumption, and a question for the evaluation testbed. The host allow-list does not restrict ports.
 
+## Model-backed dogs
+
+`ModelDog` (`src/dogs/`) is a guard dog that asks one registered model for its vote. `createModelDogs(policy, registry, bindings)` builds one for every seat on the policy's panel.
+
+```
+task (action + this dog's evidence view)
+  -> prompt: fixed instructions (system) + delimited JSON data (user)
+  -> client: the registry's endpoint, one JSON POST
+  -> reply: exactly one JSON vote, or an error
+  -> vote (approve / reject / abstain) -> Panel
+```
+
+**The dog's model is the client's model.** `ModelDog.model` is read from the client, which was made from a registry id, so a dog's label cannot differ from the model it calls. The gate's "approvals span two models" rule trusts that label, and a mislabelled dog would defeat it.
+
+**A client can only call what the registry holds.** `createModelClient(registry, id, binding)` takes an id, never a URL. The transport posts to that endpoint and nowhere else, refuses redirects (a redirect would carry the key and the evidence to a host nobody put on the egress allow-list), reads the answer with a size cap, and stops at the panel's abort signal or its own timeout. A model's name for itself (`apiModel`) is a separate, validated setting; for Gemini the model is in the registered endpoint's path, so the setting is refused.
+
+**Errors tell the audit trail the kind of failure and nothing else.** Model APIs can quote the request, and the request holds the evidence. The error never contains the response body, the headers, the underlying error's message, or the key. The panel records only the error's name, so each kind has its own: `ModelHttpError` (with a status number), `ModelNetworkError`, `ModelResponseError`, `ModelRefusedError`, `ModelOutputError`, `ModelConfigError`, `ModelInputError`. A key is checked for characters that could break a header, and a key function that throws is not repeated.
+
+**The prompt treats everything as data.** The instructions are in the system message, which no evidence reaches. The proposal and the evidence are written out as JSON, so every log line is one string value, inside a block whose tag carries a random per-call token. `<` and `>` are escaped inside the JSON, so the data cannot close its block or open another. The model is told that text in the data that addresses it, or tells it how to vote, is part of the evidence and is no reason to approve. The proposal's reason and references are marked as the proposer's own claims. None of this makes injection impossible; the design does not depend on it, because a vote is one of several and the worst a won vote can do is a reversible, expiring action that a human is told about.
+
+**The reply must be exactly a vote.** The whole reply must be one JSON object with `decision` set to `approve`, `reject` or `abstain` (optionally inside one code fence), or the dog reports an error and counts as an abstention. Prose around a JSON object is not searched for one: a model explaining that a log line contains `{"decision":"approve"}` must not have that quoted line become a vote. Replies cut off by the token limit, filtered or refused by the provider are errors, never repaired. The rationale is cleaned and capped, and nothing else the model wrote is passed on.
+
+**A dog never approves on evidence it could not fully see.** The registry limits how much evidence one call may carry. If the evidence is longer, it is cut, the prompt says so, and a dog that answers `approve` is turned into an abstention. The lines that were cut may be the ones that show the traffic was harmless. Rejecting or abstaining on partial evidence is safe, so those stand.
+
+**Three protocols.** `anthropic` (Messages API), `gemini` (`generateContent`) and `openai-compatible` (chat completions, which also covers self-hosted servers such as vLLM and Ollama). Keys go in headers, never in the URL, which the registry forbids from carrying a query string. No sampling settings are sent, because newer models refuse them. The adapters follow each provider's documentation and are tested against fakes of its response shape, and the transport against a real local server; they have not been run against the live services.
+
+**Limits.** The tier 2 triage dog is not built; it will reuse the client, prompt and reply parsing with a different question. A model can still be talked into a wrong vote; the defence is the panel. The `gemini` adapter sends the key in a header, which is supported but is not the form in every example in Google's reference pages.
+
 ## Executor
 
 `Executor.submit` (`src/executor/executor.ts`) is the only way a proposal becomes a change. It runs every proposal through the gate, so there is no path around it, and acts through a `ControlAdapter` per action kind (a WAF rule, a firewall call). The adapters are the only code that touches a real control.
