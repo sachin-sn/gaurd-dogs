@@ -301,7 +301,7 @@ describe('a cycle', () => {
   it('does nothing, writes nothing and calls nothing for no flagged events', async () => {
     const { inv, calls } = investigator('i');
     const entries: unknown[] = [];
-    const { orchestrator, submitted } = rig({ investigators: [inv], log: { append: (entry) => void entries.push(entry) } as never });
+    const { orchestrator, submitted } = rig({ investigators: [inv], log: { append: (entry: unknown) => void entries.push(entry) } as never });
     const report = await orchestrator.handle([]);
     expect(report).toMatchObject({ incidents: 0, cases: [], panels: 0, audited: true });
     expect(calls).toHaveLength(0);
@@ -703,6 +703,18 @@ describe('the panel and what comes after', () => {
     }
   });
 
+  it('forgets a handled proposal at the moment its time is up, not before', async () => {
+    const early = rig({ handledSeconds: 900, incidentWindowSeconds: 86_400 });
+    await early.orchestrator.handle([flag()]);
+    early.clock.advance(899);
+    expect((await early.orchestrator.handle([flag()])).panels).toBe(0);
+
+    const exact = rig({ handledSeconds: 900, incidentWindowSeconds: 86_400 });
+    await exact.orchestrator.handle([flag()]);
+    exact.clock.advance(900);
+    expect((await exact.orchestrator.handle([flag()])).panels).toBe(1);
+  });
+
   it('puts it to the panel again after that time, and when it was not applied', async () => {
     const timed = rig({ handledSeconds: 900, incidentWindowSeconds: 86_400 });
     await timed.orchestrator.handle([flag()]);
@@ -837,7 +849,7 @@ describe('cancelling', () => {
     const release: { go?: () => void } = {};
     const hold = new Promise<void>((resolve) => void (release.go = resolve));
     const { orchestrator, submitted } = rig({
-      vote: async () => {
+      vote: async (): Promise<Vote> => {
         await hold;
         return 'approve';
       },

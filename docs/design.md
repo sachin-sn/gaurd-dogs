@@ -173,7 +173,37 @@ A reply with the wrong shape (prose around the JSON, an unknown decision, more t
 
 **Audit.** One `investigator.review` entry per case: the case id, the investigator and model, the outcome and status, whether the evidence was partial, and for a proposal its kind, id and how many ids it cited. Never the target, the reason, the summary or any evidence.
 
-**Limits.** The investigator is only as careful as the targets it is given. If a case offers an address that an attacker can forge, such as one read from a request header, a model that is argued into it will propose it, and what stands between that and a containment is the panel's majority, the gate's protected targets and the executor's budget. Build targets from fields the attacker cannot choose freely. One investigator is one model: for a second opinion on what to propose, run two on the same case, and they will agree on the id if they agree on the action. The adapters are tested against fakes, not live services. The orchestrator that connects triage to investigators and investigators to the panel is not built yet.
+**Limits.** The investigator is only as careful as the targets it is given. If a case offers an address that an attacker can forge, such as one read from a request header, a model that is argued into it will propose it, and what stands between that and a containment is the panel's majority, the gate's protected targets and the executor's budget. Build targets from fields the attacker cannot choose freely. One investigator is one model: for a second opinion on what to propose, run two on the same case, and they will agree on the id if they agree on the action. The adapters are tested against fakes, not live services. The orchestrator (next section) is what connects triage to the investigators and the investigators to the panel.
+
+## The orchestrator
+
+`Orchestrator` (`src/orchestrator/`) runs one cycle from the pipeline's flagged hits to submitted proposals:
+
+```
+flagged hits -> incidents -> triage -> cases -> investigators -> panel -> pipeline.submit
+```
+
+It decides nothing about the world. Triage can only escalate, an investigator can only propose from the case's targets and evidence, the panel needs a majority of the whole panel, and the gate and executor decide what runs. What the orchestrator adds is the plumbing between those stages and the limits on what it spends.
+
+**Incidents.** Hits of one rule on one service within a window (default 15 minutes) are one incident. Its id depends on the rule, the service and the window, so it is the same on every cycle in the window, and so is the id of any proposal made about it. At most 20 incidents are considered per cycle, most severe first; the rest are counted.
+
+**Triage.** Incidents go to triage in one batch. Anything it does not clearly call routine goes on, and if triage throws, everything does (it is the same fail-towards-attention rule as inside triage). Nothing is remembered between cycles: new events are triaged afresh, so calling one batch routine never silences the next.
+
+**Cases.** An escalated incident becomes a case: its own events first, then the events of other incidents on the same service in the same batch, because a chain (an upload, a shell, an outbound connection) spans rules. The **targets** come from the deployer's `targets` function. `targetsFromIncident` builds them declaratively: you name the event kinds and attributes to read (`path` of a created file, the peer address of a connection) and the kinds of action that fit, and only clean text is taken. This is where the safety of the whole chain is decided, because a model can only ever name what the case offers. Use attributes an attacker cannot choose freely. An incident with no targets, or none of whose event ids can be cited, is not investigated; its tier 1 alert has already gone out.
+
+**The budget.** Every investigation costs the investigators' calls and a panel review costs up to nine more, and the events that start them can be fabricated. So a window (default 600 seconds) allows only `maxCases` cases (default 20). The most severe incidents are investigated first. The rest are counted and left to their tier 1 alerts, and **one notice per window** (an `alert.notify`, "N escalated incidents not investigated: the budget is spent") makes sure that being over budget is neither silent nor loud. The check and the spending are one synchronous step, so cycles that overlap share one allowance, and the window only moves forward, so a late cycle cannot refill it. Incidents that triage called routine, or that never became cases, are not charged.
+
+**Proposals.** Every investigator (one to three, of different model families) is asked about every case, in parallel. Proposals with the same id are one proposal. The distinct ones are put to the panel gentlest first, at most `maxProposalsPerCase` (default 2). A proposal that was **applied or is waiting for a human** is not put to the panel again for 15 minutes: the executor would call it a duplicate anyway, after the models had been paid. A proposal that was denied or failed is not remembered and may be tried again.
+
+**The panel.** Each dog is given the evidence for the view the policy names for it. The deployer supplies a builder per view and the constructor refuses to start if one is missing. `rawView` is the evidence as the investigator saw it; `summaryView` is a short form, so a payload written to fool a reader of raw logs is less likely to fool a reader of summaries too. The votes are attached to the proposal and it is submitted, whatever they were: a split or a minority flag is the gate's to report to a human.
+
+**Failure and cancellation.** A model that fails, an investigator that throws, a view that throws, a panel that throws or an executor that throws loses that step for that case and is counted in `errors`. Other cases carry on, and `handle` never throws for any of them. If the caller's signal aborts, no further case or proposal is started and what the panel finishes afterwards is not submitted.
+
+**What a cycle can cost.** At most 3 triage calls, then for each case at most one call per investigator and up to `maxProposalsPerCase` panel reviews of up to nine calls each, for at most `maxCases` cases per window.
+
+**Audit.** One `orchestrator.cycle` entry per cycle that had anything flagged: counts only (incidents, skips, triage totals, investigations, proposals, panels, submissions by status, notices, errors). Never ids, targets, reasons or events. The detail of each case is in the returned report, and each stage has written its own entry.
+
+**Limits.** Sustained fabricated activity spends the budget and then leaves incidents uninvestigated, with one notice per window to say so. Only the first 200 hits of a batch reach the orchestrator (the pipeline's `maxFlagged`), most severe first. The memory of handled proposals is in process, so a restart forgets it. Triage's judgement is per cycle, so an investigation can repeat while an incident goes on; the budget bounds that. As with every stage, this has been run against fake models, not live ones.
 
 ## Executor
 

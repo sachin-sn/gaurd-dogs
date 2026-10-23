@@ -115,6 +115,18 @@ describe('groupIncidents', () => {
     expect(incidents.map((i) => i.service)).toEqual(['svc-b', 'svc-c', 'svc-d', 'svc-a']);
   });
 
+  it('puts a larger incident before a smaller one of the same severity even when its id sorts later', () => {
+    const incidents = groupIncidents(
+      [
+        flag('d1', { service: 'svc-d', severity: 'high' }),
+        flag('z1', { service: 'svc-z', severity: 'high' }),
+        flag('z2', { service: 'svc-z', severity: 'high' }),
+      ],
+      OPTIONS,
+    );
+    expect(incidents.map((i) => i.service)).toEqual(['svc-z', 'svc-d']);
+  });
+
   it('gives the same id within a window and a new one in the next', () => {
     const at = (iso: string) => (groupIncidents([flag('x')], { ...OPTIONS, now: new Date(iso) })[0] as Incident).id;
     expect(at('2026-10-23T12:00:00Z')).toBe(at('2026-10-23T12:14:59Z'));
