@@ -1,6 +1,10 @@
-# Guard Dogs
+<p align="center">
+  <img src="docs/assets/guard-dogs-logo.png" alt="Guard Dogs logo: a German Shepherd wearing a tactical collar" width="200">
+</p>
 
-An active patrol layer for web runtimes (Node, PHP) in the AI-attacker era.
+<h1 align="center">Guard Dogs</h1>
+
+<p align="center">An active patrol layer for web runtimes (Node, PHP) in the AI-attacker era.</p>
 
 > **Status: early research prototype (v0.0.1).** This is a scaffold: shared schemas and three small, tested building blocks. It is not a product, it does not protect anything yet, and the interfaces will change.
 
