@@ -81,6 +81,7 @@ flowchart LR
 | `src/audit/log.ts` | **Audit log.** Append-only, hash-chained JSONL with tamper detection and external anchoring. | Tested |
 | `src/masking/` | **Log masking.** Removes secrets, tokens, emails and card numbers, and replaces client IPs with keyed pseudonyms, before an event reaches tier 1 or any model. Only `maskEvent` produces `masked: true`. | Tested |
 | `src/gate/` | **Response gate.** Decides what happens to a proposed action: run, wait for a human, or deny. Enforces the response levels, panel voting with distinct members and models, pre-approved scopes, protected targets, intel ceilings, and human approvals tied to the exact action. It executes nothing itself. | Tested |
+| `src/panel/` | **Panel runner.** Puts a case to every guard dog on the panel in parallel, each with its own evidence view, under one deadline. A dog that is slow, fails or answers nonsense is an abstention, not a yes. Stops early only when no outstanding vote could change the gate's verdict. Votes attach only to the exact action that was reviewed. The dogs themselves plug in through a small interface. | Tested |
 | `src/executor/` | **Executor.** The only way a proposal becomes a change. Audits before acting and fails closed, expires and reverts containment, limits how much automatic containment can run, refuses a repeated action id, and recovers its state from the audit log after a restart. Real controls plug in as adapters. | Tested |
 | `fixtures/` | Synthetic records, events and actions. Nothing here is a real advisory or a working exploit. | |
 
@@ -115,6 +116,7 @@ const { findings, rejected } = matchAdvisories(
 - Tier 1 rules are starting points, not a complete baseline. Real services will need per-service baselines and allow-lists, and they will produce false positives until tuned.
 - The audit log detects tampering in the middle of the chain. Detecting a removed tail or a rewritten chain needs an anchor stored where the writer cannot reach.
 - Sanitising evidence is hygiene, not a defence against prompt injection. Anything sent to a model must still be delimited and treated as data.
+- The panel stops waiting for a dog that ignores its abort signal, but cannot stop it. A real dog must pass the signal to its HTTP client, or it keeps running (and billing) in the background.
 - Ranges are matched with semver rules. Composer versions that are not semver-like are coerced and may match imprecisely.
 
 ## Safety and scope

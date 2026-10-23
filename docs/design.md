@@ -41,7 +41,7 @@ Investigators propose, the gate decides, and a separate executor acts. `evaluate
 
 **Minority alert.** If too few dogs approve to act, but at least `dissentAlertMin` did, nothing runs and a human is alerted anyway: the summary starts "Review needed", and the decision carries the code `minority-flag`. The default threshold is a third of the panel and never fewer than two, so 2 of 5 and 3 of 7 raise the alert and a single dog does not. With 7 dogs, 3 approving and 4 rejecting is denied, and a human is told. Every decision from a vote carries the count (`votes`: approve, reject, silent, required, panelSize), and the audit entry stores it.
 
-**Panel size and latency.** A panel has two to nine dogs (`MAX_PANEL_SIZE`). Odd sizes avoid ties, and three or five is the sensible range. Every dog is a model call that the decision waits on, and the gain shrinks fast: if each dog errs independently 20% of the time, a majority is right about 90% of the time with 3 dogs, 94% with 5, 97% with 7 and 98% with 9. That assumes independent errors, which dogs on one model are not. The latency cost is reduced by how the panel is run (the panel runner is not built yet): ask all dogs in parallel, decide as soon as the outcome cannot change (enough approvals to act, or enough rejections that approval is impossible), and stop waiting for silent dogs after a deadline. Silence never counts as agreement. Patrolling is separate from voting: many dogs can patrol different layers, while each finding goes to one panel.
+**Panel size and latency.** A panel has two to nine dogs (`MAX_PANEL_SIZE`). Odd sizes avoid ties, and three or five is the sensible range. Every dog is a model call that the decision waits on, and the gain shrinks fast: if each dog errs independently 20% of the time, a majority is right about 90% of the time with 3 dogs, 94% with 5, 97% with 7 and 98% with 9. That assumes independent errors, which dogs on one model are not. The latency cost is reduced by how the panel is run (see Panel runner below): ask all dogs in parallel, decide as soon as no outstanding vote could change what the gate concludes, and stop waiting for silent dogs after a deadline. Silence never counts as agreement. Patrolling is separate from voting: many dogs can patrol different layers, while each finding goes to one panel.
 
 **Model diversity.** Dogs on one model share its blind spots, and one crafted log line can fool every one of them. The gate therefore requires the approving dogs to span at least two models (`requireDistinctModels`, on by default), and members can be given different views of the evidence (raw logs, summaries, a timeline). Different prompts or temperatures on the same model do not count as different models. Whether mixed panels really resist injection better is a question for the evaluation testbed.
 
@@ -52,6 +52,33 @@ Investigators propose, the gate decides, and a separate executor acts. `evaluate
 A test walks every combination of level, votes, ceiling, target and approval, and asserts the gate says `execute` without a human only for a level 3 action backed by an agreeing, diverse panel within scope and ceiling.
 
 The gate does not rate-limit or keep state. That is the executor's job (next section).
+
+## Panel runner
+
+`Panel` (`src/panel/panel.ts`) puts one case to every guard dog on the panel at once and returns their votes. It decides nothing: the gate reads the votes and applies the majority rule.
+
+```
+case (action + evidence) -> every dog in parallel, each with its own view
+                         -> votes -> withVotes(action, result) -> gate
+```
+
+**The panel must be the policy's panel.** The gate counts a majority of its own panel, so the dogs given to `Panel` must match it exactly: same ids, same model and evidence view for each, none missing, none extra. Otherwise a missing dog would stay silent forever, or a dog could claim a model the gate does not know about, and the "approvals span two models" rule would mean nothing.
+
+**A dog that does not answer has not agreed.** A dog that is slow, throws, rejects or answers nonsense is recorded as an abstention with the reason (`timed-out`, `error`, `invalid`), never as a missing vote and never as a yes. The reason for an error names only the kind of failure, not its message, because errors from model APIs can quote the request. Voter ids come from the panel, not from what a dog returns, so a dog cannot vote as another dog. A dog's rationale is model output: control characters are stripped and it is capped at 300 characters before it goes anywhere.
+
+**One deadline for the whole review** (default 20 s). When it passes, dogs still working are told to stop (an `AbortSignal`) and are not waited for, even if they ignore the signal. This is what bounds latency: the decision takes as long as the slowest dog it needs, and never longer than the deadline.
+
+**Each dog sees only its own evidence view**, as a private copy. Changing what a dog was given affects nobody else, and a dog cannot see a view it was not assigned.
+
+**Early decision.** The runner stops waiting as soon as nothing still outstanding could change what the gate concludes. It does not use hand-written conditions for that. It tries every way the outstanding dogs could vote (approve, reject, stay silent) and asks the gate's own tally what each would produce. If every case gives the same verdict, the answer is settled. With at most nine dogs that is at most 3^8 cases, which is instant, and it cannot drift from the gate's rules.
+
+This keeps the minority alert intact. With seven dogs, four rejections do not settle anything while three more could still approve, because three approvals are what make a human hear about a rejected proposal. With nine dogs, five rejections plus three approvals do settle it, because the last dog cannot change either the rejection or the alert. With two dogs, one failure settles it. A majority made of a single model does not stop the wait while a dog of another model is still out, because its approval would change the verdict. The tests check the claim directly: for every panel size from 2 to 6, every combination of answers and several arrival orders, the verdict with early stopping equals the verdict of waiting for everyone.
+
+Dogs that were not needed are recorded as `not-needed` abstentions, so the audit trail shows they did not review rather than that they agreed or disagreed.
+
+**Votes are bound to the action they were cast on.** `withVotes` attaches the votes only if the action still has the same fingerprint (`actionDigest`) as when it was reviewed. A target widened, a level raised or a duration lengthened after the vote is refused. Votes already on an action are replaced, never merged.
+
+**Audit.** Each review writes one `panel.review` entry: the action id and fingerprint, the verdict, whether it ended early, and for each dog its model, status, decision, time and (cleaned) rationale. A failed write is reported as `audited: false` and does not lose the votes; the executor's own audit entries are still fail-closed.
 
 ## Executor
 

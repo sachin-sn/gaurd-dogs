@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalize, type AuditEntry, type AuditLog } from '../audit/log.js';
-import type { ProposedAction, ResponseLevel } from '../core/types.js';
+import type { ActionVote, ProposedAction, ResponseLevel } from '../core/types.js';
 import { validateAction } from '../core/validate.js';
 import { sanitizeEvidence } from '../rules/sanitize.js';
 import { matchesAny } from './glob.js';
@@ -142,13 +142,13 @@ interface Tally {
   count?: VoteCount;
 }
 
-function tallyVotes(action: ProposedAction, policy: GatePolicy): Tally {
+function tallyVotes(votes: readonly ActionVote[] | undefined, policy: GatePolicy): Tally {
   const result: Tally = { hard: [], soft: [], info: [] };
   const seen = new Set<string>();
   const approving: PanelMember[] = [];
   let rejecting = 0;
 
-  for (const vote of action.votes ?? []) {
+  for (const vote of votes ?? []) {
     const member = policy.panel.get(vote.voter);
     if (member === undefined) {
       result.hard.push('unknown-voter');
@@ -188,6 +188,24 @@ function tallyVotes(action: ProposedAction, policy: GatePolicy): Tally {
   // Not enough to act, but too many to ignore: tell a human even though nothing runs.
   if (approving.length >= policy.dissentAlertMin) result.info.push('minority-flag');
   return result;
+}
+
+/**
+ * What a set of votes amounts to in the gate's eyes, as one comparable string:
+ * the hard, soft and informational codes the tally produces. Two vote sets with
+ * the same verdict lead the gate to the same place, so the panel runner can ask
+ * "would the votes still outstanding change anything?" with the gate's own
+ * logic instead of a copy that could drift.
+ */
+export function panelVerdict(votes: readonly ActionVote[], policy: GatePolicy): string {
+  const tally = tallyVotes(votes, policy);
+  return [
+    ...tally.hard.map((code) => `hard:${code}`),
+    ...tally.soft.map((code) => `soft:${code}`),
+    ...tally.info.map((code) => `info:${code}`),
+  ]
+    .sort()
+    .join(',');
 }
 
 function approvalIsValid(
@@ -277,7 +295,7 @@ export function evaluateAction(raw: unknown, ctx: GateContext, policy: GatePolic
       if (cited.length > 0 && action.level > Math.min(...cited)) soft.push('above-intel-ceiling');
     }
 
-    const votes = tallyVotes(action, policy);
+    const votes = tallyVotes(action.votes, policy);
     count = votes.count;
     hard.push(...votes.hard);
     soft.push(...votes.soft);
