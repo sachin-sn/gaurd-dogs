@@ -75,7 +75,33 @@ Audit entry types written by the executor: `gate.decision`, `containment.applyin
 
 Adapters must make `apply` all-or-nothing and `revert` safe to call more than once.
 
-Not in the executor yet: throttling and de-duplicating alerts (a noisy source can still produce many notifications), and persistence of waiting proposals beyond the audit log.
+Not in the executor: alert throttling (that is the pipeline's job, next section) and persistence of waiting proposals beyond the audit log.
+
+## Pipeline
+
+`Pipeline` (`src/pipeline/pipeline.ts`) is what a sidecar feeds. It owns the path from raw input to proposals and hands every proposal to the executor, so the gate still decides everything.
+
+```
+raw events    -> mask -> tier 1 -> throttle -> alert / observe proposal -> executor
+advisories    -> validate + match inventory -> alert + observe proposal  -> executor
+investigator  -> proposal + evidence snapshot ----------------------------> executor
+```
+
+**It masks events itself.** The `masked` flag on the wire is never believed; every event goes through the masker, and a masker error rejects the event. Rejected events are counted, with at most five samples whose reasons are sanitised and carry no event content.
+
+**It proposes only levels 1 and 2.** Tier 1 hits become an alert (`alert.notify`) or a sampling increase (`observe.raise-sampling`). Containment comes only from investigators, through `submit`, and still has to pass the gate.
+
+**Throttling.** An alert is keyed by rule and service. The same key is sent once per window (default 300 s); repeats are counted and the next alert says how many were held back. Alert keys come from events, which a compromised application can fabricate, so there is also a cap on different alerts per window (default 20). Beyond it, one flood notice is sent per window ("this can mean an attack, or a broken event source") and the rest are counted. Nothing is dropped silently: the counts go into the audit entry.
+
+**Ids are deterministic.** An alert id is built from the rule, the event and a hash, with unsafe characters removed. Replaying the same event produces the same id, and the executor refuses an id twice, so a replay raises no second alert. An advisory alert's id also covers the record's severity, its fixed version and whether it is verified, so a higher severity, a newly available fix, or a human verifying the record raises a fresh alert, while polling an unchanged feed does not.
+
+**Reasons start with what matters.** The gate summary shows only the first 160 characters of a reason, so alerts lead with severity and what happened, then the suppressed count, then the evidence. A critical record that is not yet verified says so near the start.
+
+**Evidence for the gate.** The pipeline remembers event ids and advisory record ids it has accepted, in a bounded first-in-first-out set (default 10,000), and the ceiling each record allows. When an investigator submits a proposal, the pipeline works out which of the cited ids are known and what ceiling each allows, and passes that snapshot with the proposal. A proposal that waits for a human is therefore judged on what was known when it was made, not on whatever has been evicted since. Ids that were never seen are not in the snapshot, so containment that cites them is denied.
+
+**Audit.** Each batch with anything notable writes one `pipeline.events` or `pipeline.advisories` entry: counts only, never event content. If that write fails the report says `audited: false` and the alerts still go out. Losing a summary must not silence an alert.
+
+**Bounds.** A batch is capped (default 10,000 events; the excess is counted as dropped), the JSONL reader caps line count and line length, and the throttle and the evidence set are bounded. `stats()` reports their sizes.
 
 ## Trust boundary for informer records
 

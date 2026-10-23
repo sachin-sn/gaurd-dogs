@@ -10,3 +10,6 @@ export * from './gate/glob.js';
 export * from './gate/policy.js';
 export * from './gate/gate.js';
 export * from './executor/executor.js';
+export * from './pipeline/jsonl.js';
+export * from './pipeline/throttle.js';
+export * from './pipeline/pipeline.js';
