@@ -11,9 +11,41 @@ These are the rules the code already enforces, with pointers to where. The wider
 | 3 | Contain, reversible | Pre-approved policy, `reversible: true`, an expiry (`ttlSeconds`), and at least two votes |
 | 4 | Contain, disruptive | `requiresHumanApproval: true` and at least two votes |
 
-Enforced by `schemas/action.schema.json`. The schema checks the number of votes; the response gate (not built yet) must check that voters are distinct.
+The schema checks the shape (`schemas/action.schema.json`): reversible and expiring at level 3, human approval flagged at level 4, at least two votes. The response gate (`src/gate/`, below) checks what a schema cannot: that voters are distinct panel members, that the kind matches the level, and everything else in the next section.
 
 Tier 1 only ever suggests level 1 or 2 (`RuleHit.suggestedLevel`). Containment comes from the panel and the response gate.
+
+## Response gate
+
+Investigators propose, the gate decides, and a separate executor acts. `evaluateAction` (`src/gate/gate.ts`) is a pure function: it takes a proposal, the context (time, known evidence, intel ceilings, any human approval) and a validated policy, and returns a decision. It executes nothing.
+
+**Outcomes.** `execute` (may run now, with an expiry for level 3), `await-human` (plausible, but a person must clear it), or `deny`. Every decision carries a notification summary, because every proposed action is reported to a human. `auditDecision` records the decision, and only the decision, in the audit log.
+
+**Denied outright.** These mean the proposal cannot be trusted, and a human approval does not override them:
+
+- The proposal does not match the schema.
+- The kind needs a higher level than the one claimed. A disruptive action labelled level 1 is denied, not run.
+- A level 3 or 4 proposal cites evidence the gate does not know. This catches an investigator inventing its evidence.
+- A vote comes from someone who is not on the panel, or the same guard dog votes twice.
+- The panel voted against it.
+
+**Held for a human.** A person can clear these:
+
+- Level 4, always.
+- The evidence cited allows only a lower level until a human verifies it (the intel ceiling from `ExposureFinding.maxLevel`; the lowest ceiling among everything cited wins).
+- Policy does not pre-approve the kind, the duration is longer than policy allows, or the target is outside the pre-approved scope.
+- The target is protected (the guard dogs' own services, the audit log, the alert sink).
+- The panel is split, or it agrees but all the approvers share one model.
+
+**Panel rule (proposed, not yet confirmed).** With two guard dogs, both must approve and a split goes to a human. With three or more, a majority approves. Abstaining or not voting counts as neither. By default, the approving members must span at least two models, so one model's blind spot cannot approve alone. All of this is policy (`createGatePolicy`), so it can be changed.
+
+**Human approval.** An approval names the approver and the action's digest (`actionDigest`: id, level, kind, target, reason, evidence and duration, but not votes or timestamps). It is accepted only from a listed approver, for that exact action, within the policy's validity window. Change the target or the reason and the approval no longer applies.
+
+**Policy checks at creation.** A panel needs two distinct members. Only reversible containment kinds can be pre-approved, a bare `*` target is refused, and durations are bounded. Scopes use a simple glob (`*` only), not regular expressions.
+
+A test walks every combination of level, votes, ceiling, target and approval, and asserts the gate says `execute` without a human only for a level 3 action backed by an agreeing, diverse panel within scope and ceiling.
+
+Not in the gate yet: limits on how many actions run in a window, and the executor that carries decisions out and undoes containment when it expires.
 
 ## Trust boundary for informer records
 

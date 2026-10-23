@@ -6,3 +6,6 @@ export * from './rules/rules.js';
 export * from './rules/sanitize.js';
 export * from './audit/log.js';
 export * from './masking/masker.js';
+export * from './gate/glob.js';
+export * from './gate/policy.js';
+export * from './gate/gate.js';

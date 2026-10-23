@@ -76,9 +76,10 @@ flowchart LR
 | `src/rules/` | **Tier 1 rules engine.** Three drift rules (executable in a web root, unexpected outbound host, web process spawning a shell) with sanitised evidence. | Tested |
 | `src/audit/log.ts` | **Audit log.** Append-only, hash-chained JSONL with tamper detection and external anchoring. | Tested |
 | `src/masking/` | **Log masking.** Removes secrets, tokens, emails and card numbers, and replaces client IPs with keyed pseudonyms, before an event reaches tier 1 or any model. Only `maskEvent` produces `masked: true`. | Tested |
+| `src/gate/` | **Response gate.** Decides what happens to a proposed action: run, wait for a human, or deny. Enforces the response levels, panel voting with distinct members and models, pre-approved scopes, protected targets, intel ceilings, and human approvals tied to the exact action. It executes nothing itself. | Tested |
 | `fixtures/` | Synthetic records, events and actions. Nothing here is a real advisory or a working exploit. | |
 
-Not built yet: sidecars, tier 2 and tier 3, the panel, the response gate, the probe patrol, and the evaluation testbed.
+Not built yet: sidecars, tier 2 and tier 3, the investigator agents that make up the panel, the executor that carries out gate decisions, the probe patrol, and the evaluation testbed.
 
 ## Quick start
 
