@@ -14,3 +14,5 @@ export * from './executor/executor.js';
 export * from './pipeline/jsonl.js';
 export * from './pipeline/throttle.js';
 export * from './pipeline/pipeline.js';
+export * from './models/registry.js';
+export * from './models/plan.js';

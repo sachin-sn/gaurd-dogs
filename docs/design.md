@@ -37,13 +37,13 @@ Investigators propose, the gate decides, and a separate executor acts. `evaluate
 - The target is protected (the guard dogs' own services, the audit log, the alert sink).
 - Neither side has a majority, or a majority agrees but all the approvers share one model.
 
-**Panel rule.** At least two guard dogs run as a panel, and acting needs a **majority of the whole panel**, not of the votes that came back: 2 of 2, 2 of 3, 3 of 5, 4 of 7. A dog that abstains or does not answer has not agreed. If a majority rejects, the proposal is denied. If neither side has a majority, it waits for a human. `rule: 'unanimous'` is available as a stricter policy. By default, the approving members must span at least two models, so one model's blind spot cannot approve alone. All of this is policy (`createGatePolicy`), so it can be changed.
+**Panel rule.** At least two guard dogs run as a panel, and acting needs a **majority of the whole panel**, not of the votes that came back: 2 of 2, 2 of 3, 3 of 5, 4 of 7. A dog that abstains or does not answer has not agreed. If a majority rejects, the proposal is denied. If neither side has a majority, it waits for a human. That includes a 1–1 split on a two-dog panel, and a pair in which one dog is silent: on a pair, disagreement is not a reason to deny, a person looks. `rule: 'unanimous'` is available as a stricter policy. By default, the approving members must span at least two models, so one model's blind spot cannot approve alone. All of this is policy (`createGatePolicy`), so it can be changed.
 
 **Minority alert.** If too few dogs approve to act, but at least `dissentAlertMin` did, nothing runs and a human is alerted anyway: the summary starts "Review needed", and the decision carries the code `minority-flag`. The default threshold is a third of the panel and never fewer than two, so 2 of 5 and 3 of 7 raise the alert and a single dog does not. With 7 dogs, 3 approving and 4 rejecting is denied, and a human is told. Every decision from a vote carries the count (`votes`: approve, reject, silent, required, panelSize), and the audit entry stores it.
 
 **Panel size and latency.** A panel has two to nine dogs (`MAX_PANEL_SIZE`). Odd sizes avoid ties, and three or five is the sensible range. Every dog is a model call that the decision waits on, and the gain shrinks fast: if each dog errs independently 20% of the time, a majority is right about 90% of the time with 3 dogs, 94% with 5, 97% with 7 and 98% with 9. That assumes independent errors, which dogs on one model are not. The latency cost is reduced by how the panel is run (see Panel runner below): ask all dogs in parallel, decide as soon as no outstanding vote could change what the gate concludes, and stop waiting for silent dogs after a deadline. Silence never counts as agreement. Patrolling is separate from voting: many dogs can patrol different layers, while each finding goes to one panel.
 
-**Model diversity.** Dogs on one model share its blind spots, and one crafted log line can fool every one of them. The gate therefore requires the approving dogs to span at least two models (`requireDistinctModels`, on by default), and members can be given different views of the evidence (raw logs, summaries, a timeline). Different prompts or temperatures on the same model do not count as different models. Whether mixed panels really resist injection better is a question for the evaluation testbed.
+**Model diversity.** Dogs on one model share its blind spots, and one crafted log line can fool every one of them. The gate therefore requires the approving dogs to span at least two models (`requireDistinctModels`, on by default), and members can be given different views of the evidence (raw logs, summaries, a timeline). Different prompts or temperatures on the same model do not count as different models. Models of one family count as different to the gate but tend to fail together, so the planner never puts two of them on one panel and `analyzePanel` flags a hand-built panel that does (see Choosing models). Whether mixed panels really resist injection better is a question for the evaluation testbed.
 
 **Human approval.** An approval names the approver and the action's digest (`actionDigest`: id, level, kind, target, reason, evidence and duration, but not votes or timestamps). It is accepted only from a listed approver, for that exact action, within the policy's validity window. Change the target or the reason and the approval no longer applies.
 
@@ -79,6 +79,29 @@ Dogs that were not needed are recorded as `not-needed` abstentions, so the audit
 **Votes are bound to the action they were cast on.** `withVotes` attaches the votes only if the action still has the same fingerprint (`actionDigest`) as when it was reviewed. A target widened, a level raised or a duration lengthened after the vote is refused. Votes already on an action are replaced, never merged.
 
 **Audit.** Each review writes one `panel.review` entry: the action id and fingerprint, the verdict, whether it ended early, and for each dog its model, status, decision, time and (cleaned) rationale. A failed write is reported as `audited: false` and does not lose the votes; the executor's own audit entries are still fail-closed.
+
+## Choosing models
+
+**Configuration decides which model a dog calls. A dog never does, and nothing in the evidence can.** The evidence comes from the systems under attack. If a log line, or a model reading one, could choose the model or the endpoint, an attacker could send masked-but-still-sensitive logs to a server they control, or steer a vote to a weak model. So a dog receives a registered model and has no way to name another.
+
+**The registry** (`createModelRegistry`, `src/models/registry.ts`) lists the models that may be used. Each has an id, a provider, a family (its lineage; models of one family share blind spots), a tier (`small` for triage, `large` for investigation and votes on containment), one HTTPS endpoint, a data handling level (`standard`, `zero-retention`, `self-hosted`) and a limit on how much evidence one call may carry. Validation is strict because the endpoint is where logs go: HTTPS only, a host name rather than an IP address, no credentials, query string or fragment (that is where keys end up in logs), and no backslashes, whitespace or extra slashes, which different URL parsers read differently. The endpoint is stored in canonical form, so the host on the egress allow-list and the host actually contacted cannot differ. `egressHosts()` gives the hosts for `RulesConfig.guardDogEgress`, so that allow-list is derived from the models in use instead of kept by hand. Data handling is attested by whoever deploys; the registry cannot check it.
+
+**Which stage uses which model.** Tier 1 uses no model. Tier 2 (not built yet) is one small model that can only escalate, never act. Tier 3 is the panel: every dog votes on every finding, using a large model, up to nine dogs. Which model sits behind which seat is fixed when the panel is planned, not per finding.
+
+**Planning a panel** (`planPanel`) is deterministic and spreads the seats over providers first and model families second:
+
+- the approving dogs can span two models, which the gate requires;
+- when the registry allows, no single provider holds a majority, so one provider's outage, policy change or compromise cannot approve alone or block every approval;
+- two models of one family never sit on one panel, because the gate counts them as different while their errors are alike;
+- a seat whose evidence view is sensitive (say raw logs) goes only to a model whose handling is strong enough, if you set a minimum for that view.
+
+It refuses to plan a panel that cannot be mixed, with fewer than two families after the limits are applied. A single-model panel can still be written by hand, with `requireDistinctModels` off.
+
+**Checking a panel** (`analyzePanel`) reports what a panel depends on: which providers' outage would leave the rest unable to approve, which providers' dogs could approve alone, models that share a family, and dogs whose model is too weak for their view. It asks the gate itself whether a set of approvers would pass, so it follows the gate's majority and diversity rules exactly. A dog that uses a model outside the registry is an error, because such a model has no vetted endpoint.
+
+**No silent fallback.** If a dog's model is down, the dog abstains and is reported. It does not switch to another model, because the gate's diversity check relies on each dog's declared model; a substitute from the same family as another dog would make that check untrue. Resilience comes from how the panel is composed, which `analyzePanel` shows, and a human can change the policy.
+
+**Limits.** That different providers err independently is an assumption, and a question for the evaluation testbed. The host allow-list does not restrict ports.
 
 ## Executor
 
