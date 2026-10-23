@@ -113,10 +113,10 @@ const { findings, rejected } = matchAdvisories(
 ## Limits to be honest about
 
 - Masking is pattern-based. It favours over-masking, but it cannot recognise every secret format, names, phone numbers or free-text personal data. Treat it as one layer: keep secrets out of logs at the source too.
+- The panel stops waiting for a dog that ignores its abort signal, but cannot stop it. A real dog must pass the signal to its HTTP client, or it keeps running (and billing) in the background.
 - Tier 1 rules are starting points, not a complete baseline. Real services will need per-service baselines and allow-lists, and they will produce false positives until tuned.
 - The audit log detects tampering in the middle of the chain. Detecting a removed tail or a rewritten chain needs an anchor stored where the writer cannot reach.
 - Sanitising evidence is hygiene, not a defence against prompt injection. Anything sent to a model must still be delimited and treated as data.
-- The panel stops waiting for a dog that ignores its abort signal, but cannot stop it. A real dog must pass the signal to its HTTP client, or it keeps running (and billing) in the background.
 - Ranges are matched with semver rules. Composer versions that are not semver-like are coerced and may match imprecisely.
 
 ## Safety and scope
