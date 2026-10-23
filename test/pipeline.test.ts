@@ -366,6 +366,101 @@ describe('pipeline: events', () => {
   });
 });
 
+describe('pipeline: flagged hits', () => {
+  it('hands back each hit with its masked event, and what became of its alert', async () => {
+    const { pipeline } = setup();
+    const first = shell();
+    const second = shell();
+    const report = await pipeline.ingestEvents([first, second]);
+
+    expect(report.hits).toBe(2);
+    expect(report.flaggedDropped).toBe(0);
+    expect(report.flagged.map((f) => [f.hit.eventId, f.hit.ruleId, f.alert])).toEqual([
+      [first.id, 'drift.webroot-new-executable', 'sent'],
+      [second.id, 'drift.webroot-new-executable', 'duplicate'],
+    ]);
+    expect(report.flagged[0]?.event).toMatchObject({ id: first.id, service: 'shop-web', kind: 'file.created', masked: true });
+    expect(report.flagged[0]?.event.attrs['path']).toBe('/var/www/html/uploads/x.php');
+  });
+
+  it('lists a hit whose alert was held back by the flood cap', async () => {
+    const { pipeline } = setup({ throttle: { maxPerWindow: 2 } });
+    const report = await pipeline.ingestEvents(Array.from({ length: 4 }, (_, i) => shell({ service: `svc-${i}` })));
+    expect(report.flagged.map((f) => f.alert).sort()).toEqual(['flood', 'flood', 'sent', 'sent']);
+  });
+
+  it('gives the masked event, never the raw one', async () => {
+    const { pipeline } = setup();
+    const event = raw({ path: '/var/www/html/uploads/y.php', actor: 'www-data', note: 'contact bob@example.invalid' });
+    const report = await pipeline.ingestEvents([{ ...event, masked: false }]);
+    const flagged = report.flagged[0]?.event;
+    expect(flagged?.masked).toBe(true);
+    expect(flagged?.attrs['note']).toBeDefined();
+    expect(JSON.stringify(flagged)).not.toContain('bob@example.invalid');
+  });
+
+  it('lists only hits, most severe first, and nothing for ordinary or rejected events', async () => {
+    const { pipeline } = setup();
+    const ordinary = raw({ path: '/var/www/html/uploads/photo.jpg' });
+    const malformed = { id: 'bad-1', attrs: 'nope' };
+    const upload = shell();
+    const outbound = raw({ host: '203.0.113.9', actor: 'www-data' }, { kind: 'net.outbound' });
+    const report = await pipeline.ingestEvents([ordinary, malformed, upload, outbound]);
+
+    expect(report.rejected).toBe(1);
+    expect(report.hits).toBe(report.flagged.length);
+    const ids = report.flagged.map((f) => f.hit.eventId);
+    expect(ids).toContain(upload.id);
+    expect(ids).toContain(outbound.id);
+    expect(ids).not.toContain(ordinary.id);
+    const severities = report.flagged.map((f) => ['low', 'medium', 'high', 'critical'].indexOf(f.hit.severity));
+    expect(severities).toEqual([...severities].sort((a, b) => b - a));
+  });
+
+  it('is empty for a quiet batch', async () => {
+    const { pipeline } = setup();
+    const report = await pipeline.ingestEvents([raw({ path: '/var/www/html/uploads/photo.jpg' })]);
+    expect(report.flagged).toEqual([]);
+    expect(report.flaggedDropped).toBe(0);
+  });
+
+  it('keeps the most severe when there are more than it will hand back, and counts the rest', async () => {
+    const { pipeline, sent } = setup({ maxFlagged: 2 });
+    const quiet = Array.from({ length: 3 }, (_, i) => shell({ service: `low-${i}` }));
+    const loud = raw({ host: '203.0.113.9', actor: 'www-data' }, { kind: 'net.outbound', service: 'billing' });
+    const report = await pipeline.ingestEvents([...quiet, loud]);
+
+    expect(report.hits).toBe(4);
+    expect(report.flagged).toHaveLength(2);
+    expect(report.flaggedDropped).toBe(2);
+    // Every hit still raised its alert.
+    expect(sent).toHaveLength(4);
+    const best = report.flagged[0]?.hit.severity;
+    expect(['high', 'critical']).toContain(best);
+  });
+
+  it('can hand back nothing, and still counts and alerts', async () => {
+    const { pipeline, sent } = setup({ maxFlagged: 0 });
+    const report = await pipeline.ingestEvents([shell()]);
+    expect(report).toMatchObject({ hits: 1, flagged: [], flaggedDropped: 1 });
+    expect(sent).toHaveLength(1);
+  });
+
+  it('checks the setting', () => {
+    for (const maxFlagged of [-1, 1.5, 10_001, Number.NaN]) {
+      expect(() => setup({ maxFlagged })).toThrow(/maxFlagged/);
+    }
+    expect(() => setup({ maxFlagged: 10_000 })).not.toThrow();
+  });
+
+  it('does not put event content into the audit entry', async () => {
+    const { pipeline, audits } = setup();
+    await pipeline.ingestEvents([shell()]);
+    expect(JSON.stringify(audits)).not.toContain('x.php');
+    expect(audits[0]?.data).not.toHaveProperty('flagged');
+  });
+});
+
 describe('pipeline: advisories', () => {
   it('alerts on an exposed service, asks for more sampling, and notes that a human has not verified it', async () => {
     const { pipeline, sent } = setup();
