@@ -83,12 +83,13 @@ flowchart LR
 | `src/gate/` | **Response gate.** Decides what happens to a proposed action: run, wait for a human, or deny. Enforces the response levels, panel voting with distinct members and models, pre-approved scopes, protected targets, intel ceilings, and human approvals tied to the exact action. It executes nothing itself. | Tested |
 | `src/panel/` | **Panel runner.** Puts a case to every guard dog on the panel in parallel, each with its own evidence view, under one deadline. A dog that is slow, fails or answers nonsense is an abstention, not a yes. Stops early only when no outstanding vote could change the gate's verdict. Votes attach only to the exact action that was reviewed. The dogs themselves plug in through a small interface. | Tested |
 | `src/models/` | **Model registry and panel planner.** The only models a guard dog may call, each with one validated HTTPS endpoint. Plans which model sits behind which seat (providers and families spread, data handling per view), derives the egress allow-list from the models in use, and reports what a panel depends on. Configuration decides; a dog or the evidence never does. | Tested |
+| `src/dogs/` | **Model-backed guard dogs.** A `ModelDog` asks one registered model for its vote. Adapters for the Anthropic Messages API, the Gemini API and any OpenAI-compatible server (which covers self-hosted models). Evidence goes to the model as delimited JSON data, the reply must be exactly one JSON vote or it counts as an abstention, and an approval on evidence that was cut short becomes an abstention. A client can only call the endpoint the registry holds for its model, never follows a redirect, caps the answer size, and never puts a key, a response body or the evidence in an error. | Tested against fakes; not run against live services |
 | `src/executor/` | **Executor.** The only way a proposal becomes a change. Audits before acting and fails closed, expires and reverts containment, limits how much automatic containment can run, refuses a repeated action id, and recovers its state from the audit log after a restart. Real controls plug in as adapters. | Tested |
 | `src/pipeline/` | **Sidecar pipeline.** Takes raw events and staged informer records and runs them through masking, tier 1, alert throttling and the executor. Caps how many different alerts go out per window, so fabricated events cannot bury a real alert. Gives the gate a per-proposal snapshot of the evidence it may cite. Includes a bounded JSONL reader. | Tested |
 | `examples/demo.ts` | **Offline demo.** The whole flow end to end with scripted stand-in dogs. Also run by the tests. | Tested |
 | `fixtures/` | Synthetic records, events and actions. Nothing here is a real advisory or a working exploit. | |
 
-Not built yet: the sidecar processes themselves (tailing logs and shipping events to the pipeline), the guard dogs that call models (tier 2 triage and the tier 3 panel members), the probe patrol, and the evaluation testbed.
+Not built yet: the sidecar processes themselves (tailing logs and shipping events to the pipeline), the tier 2 triage dog (the panel dogs exist), the investigators that propose actions, the probe patrol, and the evaluation testbed.
 
 ## Quick start
 
@@ -107,6 +108,33 @@ npm run demo
 ```
 
 Nothing calls a model or the network. The guard dogs in the demo are scripted stand-ins whose votes are set per scene; the model registry and planner, masking, throttling, panel runner, response gate, executor, human approval and expiry are the real code. It walks through a burst of webshell uploads becoming one alert, four of seven dogs agreeing and the rest being stopped, three against four being rejected while a human is still told, two silent dogs sending a decision to a person, and containment expiring. The tests run it too, so it cannot drift from the code.
+
+Use real models. You choose the models and say how to reach each one; the dogs only ever call those.
+
+```ts
+import { Panel, createGatePolicy, createModelDogs, createModelRegistry, planPanel } from 'guard-dogs';
+
+const registry = createModelRegistry([
+  { id: 'claude-large', provider: 'anthropic', family: 'claude', tier: 'large', handling: 'zero-retention', maxInputChars: 40_000,
+    endpoint: 'https://api.anthropic.com/v1/messages' },
+  { id: 'gemini-large', provider: 'google', family: 'gemini', tier: 'large', handling: 'zero-retention', maxInputChars: 40_000,
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent' },
+  { id: 'local-large', provider: 'selfhosted', family: 'open', tier: 'large', handling: 'self-hosted', maxInputChars: 40_000,
+    endpoint: 'https://llm.internal.example/v1/chat/completions' },
+]);
+
+const policy = createGatePolicy({ panel: planPanel(registry, { size: 3, views: ['raw-logs', 'summaries', 'timeline'] }), /* ... */ });
+
+const dogs = createModelDogs(policy, registry, {
+  'claude-large': { protocol: 'anthropic', apiModel: '<model name>', apiKey: () => process.env['ANTHROPIC_API_KEY'] as string },
+  'gemini-large': { protocol: 'gemini', apiKey: () => process.env['GEMINI_API_KEY'] as string }, // the model is in the endpoint
+  'local-large': { protocol: 'openai-compatible', apiModel: '<model name>', apiKey: () => process.env['LOCAL_LLM_KEY'] as string },
+});
+
+const review = await new Panel({ policy, dogs }).review({ action, evidence });
+```
+
+The library never reads the environment; pass keys from your secret store. Put `registry.egressHosts()` in `RulesConfig.guardDogEgress`.
 
 Example: match an advisory against what you run.
 
@@ -128,6 +156,8 @@ const { findings, rejected } = matchAdvisories(
 - Tier 1 rules are starting points, not a complete baseline. Real services will need per-service baselines and allow-lists, and they will produce false positives until tuned.
 - The audit log detects tampering in the middle of the chain. Detecting a removed tail or a rewritten chain needs an anchor stored where the writer cannot reach.
 - Sanitising evidence is hygiene, not a defence against prompt injection. Anything sent to a model must still be delimited and treated as data.
+- The model adapters follow each provider's documented request format and are tested against fakes, plus a real local server for the redirect, size and timeout behaviour. They have not been run against the live services, which the build environment cannot reach. Try each with a real key and a throwaway panel before relying on it.
+- The prompt and the strict reply parsing make prompt injection harder, not impossible. What bounds the damage is the rest of the design: a majority across models, reversible and expiring actions, and a human told about anything contested.
 - Alerts are throttled by rule and service. One alert per window can stand for many events; the suppressed counts are reported on the next alert and in the audit log, but a quiet repeat is not individually notified.
 - The pipeline trusts the staging zone's integrity. If something can write there, it can choose which copy of an advisory record the pipeline sees last. Protect that directory like the audit log.
 - Waiting proposals live in memory. After a restart the investigators propose again.
