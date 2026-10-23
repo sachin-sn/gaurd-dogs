@@ -128,6 +128,11 @@ describe('postJson, against a fake fetch', () => {
       return (await postJson('https://a.example.invalid/x', {}, {}, never, { fetch: fn }).catch((e: unknown) => e)) as ModelError;
     };
     expect(await answer(new Response('<html>', { headers: { 'content-type': 'text/html' } }))).toMatchObject({ kind: 'response' });
+    // Valid JSON from something that does not say it is JSON (a portal, a misconfigured proxy) is not trusted either.
+    expect(await answer(new Response('{"ok":true}', { headers: { 'content-type': 'text/plain' } }))).toMatchObject({
+      kind: 'response',
+      message: 'the model API did not answer with JSON',
+    });
     expect(await answer(new Response('{"a":', { headers: { 'content-type': 'application/json' } }))).toMatchObject({ kind: 'response' });
     expect(await answer(new Response(new Uint8Array([0x7b, 0x22, 0xff, 0x22, 0x3a, 0x31, 0x7d]), { headers: { 'content-type': 'application/json' } }))).toMatchObject({
       kind: 'response',

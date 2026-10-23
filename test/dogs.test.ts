@@ -87,6 +87,12 @@ describe('buildVotePrompt', () => {
     expect(request.user.match(new RegExp(`</evidence-${NONCE}>`, 'g'))).toHaveLength(1);
     expect(request.user.match(new RegExp(`<evidence-${NONCE}>`, 'g'))).toHaveLength(1);
     expect(request.user.match(/<system>/g)).toBeNull();
+    // Inside either block there is no angle bracket at all, only escapes.
+    for (const name of ['proposal', 'evidence']) {
+      const open = `<${name}-${NONCE}>\n`;
+      const inside = request.user.slice(request.user.indexOf(open) + open.length, request.user.indexOf(`\n</${name}-${NONCE}>`));
+      expect(inside, name).not.toMatch(/[<>]/);
+    }
     expect(request.user).not.toContain(LS);
     expect(request.user).not.toContain(PS);
     // Still the same data once read back.
