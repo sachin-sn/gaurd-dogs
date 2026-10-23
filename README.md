@@ -75,6 +75,7 @@ flowchart LR
 | `src/exposure/matcher.ts` | **Advisory matcher.** Matches informer records against the inventory. Validates records at the trust boundary, enforces the source allow-list, and caps the response level for unverified intel. | Tested |
 | `src/rules/` | **Tier 1 rules engine.** Three drift rules (executable in a web root, unexpected outbound host, web process spawning a shell) with sanitised evidence. | Tested |
 | `src/audit/log.ts` | **Audit log.** Append-only, hash-chained JSONL with tamper detection and external anchoring. | Tested |
+| `src/masking/` | **Log masking.** Removes secrets, tokens, emails and card numbers, and replaces client IPs with keyed pseudonyms, before an event reaches tier 1 or any model. Only `maskEvent` produces `masked: true`. | Tested |
 | `fixtures/` | Synthetic records, events and actions. Nothing here is a real advisory or a working exploit. | |
 
 Not built yet: sidecars, tier 2 and tier 3, the panel, the response gate, the probe patrol, and the evaluation testbed.
@@ -104,6 +105,7 @@ const { findings, rejected } = matchAdvisories(
 
 ## Limits to be honest about
 
+- Masking is pattern-based. It favours over-masking, but it cannot recognise every secret format, names, phone numbers or free-text personal data. Treat it as one layer: keep secrets out of logs at the source too.
 - Tier 1 rules are starting points, not a complete baseline. Real services will need per-service baselines and allow-lists, and they will produce false positives until tuned.
 - The audit log detects tampering in the middle of the chain. Detecting a removed tail or a rewritten chain needs an anchor stored where the writer cannot reach.
 - Sanitising evidence is hygiene, not a defence against prompt injection. Anything sent to a model must still be delimited and treated as data.

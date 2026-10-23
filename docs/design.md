@@ -39,10 +39,33 @@ Free text (`summary`) is untrusted display data. No code path treats it as an in
 
 Events come from the systems being attacked, so every string in them is attacker-influenced.
 
-- `schemas/event.schema.json` requires `masked: true`, the sidecar's attestation that secrets and personal data were masked before the event left the host.
+- `schemas/event.schema.json` requires `masked: true`, the sidecar's attestation that secrets and personal data were masked before the event left the host. In code, only `maskEvent` (`src/masking/masker.ts`) produces it, and only for an event that is valid against the schema.
 - `runTier1` validates events before evaluating them and reports invalid ones.
 - Rule evidence is passed through `sanitizeEvidence` (control characters stripped, length capped) before it is stored.
 - A throwing rule is recorded and skipped; it cannot stop the other rules.
+
+## Log masking
+
+Masking runs on the sidecar, before an event reaches tier 1 or any model. It is `createMasker` in `src/masking/masker.ts`.
+
+| What | How it is masked |
+| --- | --- |
+| Private key blocks, JWTs, cloud access keys, common service tokens, `Bearer` and `Basic` credentials | Replaced by a placeholder such as `[jwt]` or `Bearer [redacted]` |
+| Credentials in URLs, and `password=`, `token=`, `api_key=` style pairs (query strings, JSON, headers) | The value becomes `[redacted]`; the key and the rest of the text stay readable |
+| Email addresses | `[email]` |
+| Card numbers | `[card]`, only when the digits pass the Luhn check, so ordinary long numbers survive |
+| IP addresses (v4 and v6) | A keyed pseudonym, `ip_` plus 12 hex characters from an HMAC. The same address gets the same pseudonym, so events still correlate, and the key stays on the sidecar |
+| Attributes with sensitive names (`authorization`, `cookie`, `password`, `token`, `api-key` and similar) | The whole value is replaced, whatever its content or type |
+
+Decisions the code makes:
+
+- **Destination hosts are kept.** The `host` attribute is exempt from IP pseudonyms, because the unexpected-outbound rule needs it (a raw IP is a stronger signal). A test checks that masked events still trigger the same tier 1 rules.
+- **Over-masking is the safe failure.** Patterns favour masking a harmless string over missing a secret.
+- **Reports hold counts, never values.** A `MaskReport` says how many of each kind were masked.
+- **Hostile input is bounded.** Values are cut to 64 KiB before the patterns run, and to 2048 characters after. A test runs adversarial inputs under a time limit.
+- **Idempotent.** Masking masked text changes nothing.
+
+What it does not do: recognise names, phone numbers, free-text personal data or unusual secret formats. Keep secrets out of logs at the source as well.
 
 ## Guard dog egress
 
