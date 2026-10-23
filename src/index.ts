@@ -22,3 +22,4 @@ export * from './dogs/client.js';
 export * from './dogs/verdict.js';
 export * from './dogs/prompt.js';
 export * from './dogs/model-dog.js';
+export * from './dogs/triage.js';

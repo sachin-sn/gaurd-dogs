@@ -17,20 +17,26 @@ const MAX_RATIONALE = 300;
 const DECISIONS = ['approve', 'reject', 'abstain'] as const;
 const FENCE = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n?```$/i;
 
-export function parseVerdict(reply: string): DogOpinion {
-  if (typeof reply !== 'string' || reply.length > MAX_REPLY_CHARS) {
-    throw new ModelError('output', 'the reply was missing or longer than a vote should be');
+/**
+ * The model's whole reply as a parsed value: one JSON value, optionally inside
+ * one code fence, and nothing else. Throws a `ModelError` otherwise.
+ */
+export function readJsonReply(reply: string, maxChars: number = MAX_REPLY_CHARS): unknown {
+  if (typeof reply !== 'string' || reply.length > maxChars) {
+    throw new ModelError('output', 'the reply was missing or too long');
   }
   let text = reply.trim();
   const fenced = FENCE.exec(text);
   if (fenced !== null) text = (fenced[1] as string).trim();
-
-  let value: unknown;
   try {
-    value = JSON.parse(text);
+    return JSON.parse(text) as unknown;
   } catch {
     throw new ModelError('output', 'the reply was not a JSON object');
   }
+}
+
+export function parseVerdict(reply: string): DogOpinion {
+  const value = readJsonReply(reply);
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new ModelError('output', 'the reply was not a JSON object');
   }

@@ -234,7 +234,7 @@ describe('parseVerdict', () => {
     const ok = JSON.stringify({ decision: 'approve', rationale: 'r'.repeat(MAX_REPLY_CHARS - 60) });
     expect(ok.length).toBeLessThanOrEqual(MAX_REPLY_CHARS);
     expect(parseVerdict(ok).decision).toBe('approve');
-    expect(() => parseVerdict(JSON.stringify({ decision: 'approve', rationale: 'r'.repeat(MAX_REPLY_CHARS) }))).toThrow(/longer than a vote/);
+    expect(() => parseVerdict(JSON.stringify({ decision: 'approve', rationale: 'r'.repeat(MAX_REPLY_CHARS) }))).toThrow(/too long/);
   });
 
   it('cleans and caps the rationale, and passes nothing else on', () => {
