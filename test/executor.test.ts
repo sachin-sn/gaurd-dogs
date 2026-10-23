@@ -646,6 +646,65 @@ describe('executor: restart', () => {
   });
 });
 
+describe('executor: minority alert', () => {
+  const MODELS = ['model-x', 'model-y'];
+  const panelOf = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `dog-${i + 1}`, model: MODELS[i % 2]!, evidenceView: 'raw-logs' }));
+  const ballot = (n: number, approve: number, reject: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      voter: `dog-${i + 1}`,
+      decision: (i < approve ? 'approve' : i < approve + reject ? 'reject' : 'abstain') as 'approve' | 'reject' | 'abstain',
+    }));
+  const sevenDogs = () => ({ policy: policy({ panel: panelOf(7), requireDistinctModels: false }) });
+
+  it('sends a denied proposal that 3 of 7 dogs flagged as its own kind of alert, and still does nothing', async () => {
+    const { exec, adapter, sent, types } = setup(sevenDogs());
+    const result = await exec.submit(level3({ votes: ballot(7, 3, 4) }));
+
+    expect(result.status).toBe('denied');
+    expect(adapter.applyCalls).toEqual([]);
+    expect(sent.map((n) => n.kind)).toEqual(['dissent']);
+    expect(sent[0]?.summary).toMatch(/^Review needed: .*3 of 7 approved \(4 needed\)/);
+    expect(types()).toEqual(['gate.decision']);
+  });
+
+  it('keeps ordinary denials as ordinary reports', async () => {
+    const { exec, sent } = setup(sevenDogs());
+    await exec.submit(level3({ votes: ballot(7, 2, 5) }));
+
+    expect(sent.map((n) => n.kind)).toEqual(['decision']);
+    expect(sent[0]?.summary).not.toContain('Review needed');
+  });
+
+  it('flags a proposal that is held for a human because no side had a majority', async () => {
+    const { exec, sent } = setup(sevenDogs());
+    // 4 of 7 answered: 3 approve, 1 rejects; 3 never replied.
+    const result = await exec.submit(level3({ votes: ballot(7, 3, 1).slice(0, 4) }));
+
+    expect(result.status).toBe('pending-human');
+    expect(sent.map((n) => n.kind)).toEqual(['dissent']);
+  });
+
+  it('does not call a decision that ran a dissent, even when some dogs disagreed', async () => {
+    const { exec, adapter, sent } = setup({ policy: policy({ panel: panelOf(5), requireDistinctModels: false }) });
+    const result = await exec.submit(level3({ votes: ballot(5, 3, 2) }));
+
+    expect(result.status).toBe('applied');
+    expect(adapter.applyCalls).toEqual(['act-1']);
+    expect(sent.map((n) => n.kind)).toEqual(['decision']);
+  });
+
+  it('still raises the alert when the queue of waiting proposals is full', async () => {
+    const { exec, sent } = setup({ ...sevenDogs(), maxPending: 1 });
+    await exec.submit(level3({ id: 'act-a', votes: ballot(7, 3, 1).slice(0, 4) }));
+    const overflow = await exec.submit(level3({ id: 'act-b', votes: ballot(7, 3, 1).slice(0, 4) }));
+
+    expect(overflow.status).toBe('queue-full');
+    expect(sent.map((n) => n.kind)).toEqual(['dissent', 'dissent']);
+    expect(sent[1]?.summary).toContain('queue');
+  });
+});
+
 describe('executor: nothing runs that the gate did not clear', () => {
   it('holds for every combination of level, kind, target, votes and duration', async () => {
     const gatePolicy = policy();

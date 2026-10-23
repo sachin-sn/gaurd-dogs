@@ -69,7 +69,7 @@ The gate does not rate-limit or keep state. That is the executor's job (next sec
 
 **Restart.** `recover()` verifies the audit log (and refuses to start if it fails), then rebuilds what is active, which ids have run, and which changes are `uncertain`: an intent was logged but the log never says what happened. Uncertain changes are reported to a human, who checks the control by hand and calls `resolveUncertain`. A proposal the budget held back is not counted as run, so it can be proposed again. Waiting proposals are not stored in the log and are lost on restart; the investigators propose them again.
 
-**Notifications** are best effort with a timeout, so a slow or broken notifier cannot stall the executor. Failures are logged.
+**Notifications** are best effort with a timeout, so a slow or broken notifier cannot stall the executor. Failures are logged. A proposal that did not run but that enough dogs flagged (the gate's `minority-flag`) is sent as its own kind, `dissent`, so a notifier can route it to a higher-attention channel than the routine `decision` reports.
 
 Audit entry types written by the executor: `gate.decision`, `containment.applying`, `containment.applied`, `containment.apply-failed`, `containment.reverted`, `containment.revert-failed`, `containment.resolved`, `executor.rate-limited`, `executor.rejected`, `executor.duplicate`, `executor.no-adapter`, `executor.notify-failed`.
 

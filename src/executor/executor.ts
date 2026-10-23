@@ -40,7 +40,16 @@ export interface ControlAdapter {
 }
 
 export interface Notification {
-  kind: 'alert' | 'decision' | 'apply-failed' | 'revert-failed' | 'audit-failed' | 'reverted' | 'uncertain';
+  kind:
+    | 'alert'
+    | 'decision'
+    /** A minority of the panel flagged something that was not acted on. Worth a higher-attention channel than 'decision'. */
+    | 'dissent'
+    | 'apply-failed'
+    | 'revert-failed'
+    | 'audit-failed'
+    | 'reverted'
+    | 'uncertain';
   actionId: string;
   /** Sanitised, human-readable. */
   summary: string;
@@ -134,6 +143,15 @@ interface PendingEntry extends PendingAction {
 
 function errorText(error: unknown): string {
   return sanitizeEvidence(error instanceof Error ? error.message : String(error), 200);
+}
+
+/**
+ * For a decision that did not run. If enough guard dogs flagged it anyway, it goes
+ * out as 'dissent' so it is not lost among routine reports. (A decision that ran,
+ * even after a human cleared a minority-flagged one, is already known to the human.)
+ */
+function decisionKind(decision: GateDecision): Notification['kind'] {
+  return decision.codes.includes('minority-flag') ? 'dissent' : 'decision';
 }
 
 function isContainment(kind: ActionKind): boolean {
@@ -294,7 +312,7 @@ export class Executor {
     if (auditFailure !== null) return this.auditFailed(decision, auditFailure);
 
     if (decision.outcome === 'deny') {
-      await this.tellHuman({ kind: 'decision', actionId: decision.actionId, summary: decision.notify.summary });
+      await this.tellHuman({ kind: decisionKind(decision), actionId: decision.actionId, summary: decision.notify.summary });
       return { status: 'denied', decision };
     }
 
@@ -336,7 +354,7 @@ export class Executor {
 
     if (decision.outcome === 'deny') {
       this.pending.delete(actionId);
-      await this.tellHuman({ kind: 'decision', actionId, summary: decision.notify.summary });
+      await this.tellHuman({ kind: decisionKind(decision), actionId, summary: decision.notify.summary });
       return { status: 'denied', decision };
     }
     // Without a valid approval a rate-limited proposal would clear the gate on its own and
@@ -477,7 +495,7 @@ export class Executor {
   private async announceHold(parked: SubmitResult, decision: GateDecision): Promise<void> {
     const actionId = decision.actionId;
     if (parked.status === 'pending-human') {
-      await this.tellHuman({ kind: 'decision', actionId, summary: decision.notify.summary });
+      await this.tellHuman({ kind: decisionKind(decision), actionId, summary: decision.notify.summary });
     } else if (parked.status === 'rate-limited') {
       await this.tellHuman({
         kind: 'decision',
@@ -486,7 +504,7 @@ export class Executor {
       });
     } else if (parked.status === 'queue-full') {
       await this.tellHuman({
-        kind: 'decision',
+        kind: decisionKind(decision),
         actionId,
         summary: `The queue of proposals waiting for a human is full, so this one was dropped. ${decision.notify.summary}`,
       });
