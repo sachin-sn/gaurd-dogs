@@ -147,7 +147,33 @@ task (action + this dog's evidence view)
 
 **Audit.** One `triage.review` entry per batch: how many items, how many escalated, how many were settled by the fallback, and each model's status (`ok`, `timed-out`, `cancelled` or the error's name). Counts only, never the flags, their evidence or a model's reasons.
 
-**Limits.** Triage looks at what tier 1 flagged. It does not read the event stream, so it cannot find what no rule noticed. It is not yet wired to anything: the investigators that turn an escalation into a proposed action are the next piece.
+**Limits.** Triage looks at what tier 1 flagged. It does not read the event stream, so it cannot find what no rule noticed. What happens to an escalated item is the investigator's job (next section).
+
+## Tier 3 investigator
+
+`Investigator` (`src/dogs/investigator.ts`) takes one escalated case and asks a large model whether a defensive action is warranted. The reply is either `none` or one proposal. It reuses the model clients, the delimited prompt blocks and the strict reply reader from the model-backed dogs.
+
+**A case is built by the system.** It holds the summary (untrusted text from tier 1 or 2), the evidence as a list of `{id, content}`, and a list of **targets**: each is a name that may be acted on (a source address, a file path, a service) with the containment kinds that fit it. The model sees all of it as data.
+
+**The model picks; code builds.** Of what the model writes, the proposal uses the target, the kind, the evidence ids, the suggested duration and the reason. Everything else is set by code:
+
+- The target must be exactly one in the case, and the kind one listed for that target and allowed for this investigator. Otherwise the proposal is refused (`rejected:unknown-target` or `rejected:kind-not-allowed`). A target the logs mention but the case does not list can never be proposed, however the logs are worded.
+- Every cited id must be one the model was shown, and at least one must be cited (`rejected:unknown-evidence`, `rejected:no-evidence`). This is the first check against invented evidence. The gate repeats it later against what the pipeline really saw.
+- The level follows from the kind (`MIN_LEVEL`), a level 3 action is always reversible and carries an expiry, a level 4 action always asks for a human, and `proposedBy` is the investigator's own id. A reason is required (`rejected:no-reason`) and is cleaned and capped.
+- The duration is whatever the model suggests, but at most `maxTtlSeconds`, and `defaultTtlSeconds` if it gives none or nonsense. Set the maximum to what the gate policy pre-approves, or proposals wait for a human.
+- The proposal id comes from the case, the kind and the target, not from the wording. The same finding always gets the same id, so two investigators, or one asked twice, cannot get the same containment run twice (the executor treats a repeated id as a duplicate).
+
+A reply with the wrong shape (prose around the JSON, an unknown decision, more than 20 ids) is a failure like any other (`ModelOutputError`). Nothing is repaired.
+
+**"None" is always safe.** A human was alerted by tier 1 before any of this ran, so declining to propose costs nothing. The prompt says so, and says to answer "none" when the evidence is ordinary, thin, cut short, or looks like it is trying to steer the investigator.
+
+**Evidence that does not fit.** The case block and as many pieces of evidence as fit the model's `maxInputChars` are sent, from the first piece on. The result says how many were left out (`partial`), the model is told, and it cannot cite what it was not shown. If not even the first piece fits, nothing is asked and the result is a `ModelInputError` failure.
+
+**Failures.** The result says `failed` with a `status`: `timed-out`, `cancelled`, the name of the model error, or `rejected:<problem>`. Only the kind of failure is kept, never the model's words or an error message, which can quote the request. A failed investigation leaves the situation as it was: the alert has gone out, and a human can look. Only a malformed case throws, because that is a caller bug. The client's own transport timeout (30 seconds by default) applies as well as the investigator's deadline (60 seconds by default); raise the transport timeout for a slow large model.
+
+**Audit.** One `investigator.review` entry per case: the case id, the investigator and model, the outcome and status, whether the evidence was partial, and for a proposal its kind, id and how many ids it cited. Never the target, the reason, the summary or any evidence.
+
+**Limits.** The investigator is only as careful as the targets it is given. If a case offers an address that an attacker can forge, such as one read from a request header, a model that is argued into it will propose it, and what stands between that and a containment is the panel's majority, the gate's protected targets and the executor's budget. Build targets from fields the attacker cannot choose freely. One investigator is one model: for a second opinion on what to propose, run two on the same case, and they will agree on the id if they agree on the action. The adapters are tested against fakes, not live services. The orchestrator that connects triage to investigators and investigators to the panel is not built yet.
 
 ## Executor
 
