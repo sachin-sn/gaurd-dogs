@@ -430,6 +430,23 @@ describe('majority of the whole panel, at any size', () => {
     expect(decision.expiresAt).toBeUndefined();
   });
 
+  it('stops warning once a human has approved the flagged proposal', () => {
+    // 3 approve, 3 reject, 1 silent: no majority either way, but enough dogs flagged it to tell a human.
+    const action = level3({ votes: ballot(7, 3, 3) });
+    const p = policy({ panel: panelOf(7) });
+
+    const before = evaluateAction(action, ctx(), p);
+    expect(before.outcome).toBe('await-human');
+    expect(before.notify.summary).toMatch(/^Review needed: .*too few to act on/);
+
+    const after = evaluateAction(action, ctx({ humanApproval: approvalFor(action) }), p);
+    expect(after.outcome).toBe('execute');
+    expect(after.codes).toEqual(expect.arrayContaining(['minority-flag', 'human-approved']));
+    expect(after.notify.summary).not.toContain('Review needed');
+    expect(after.notify.summary).not.toContain('too few to act on');
+    expect(after.notify.summary).toContain('3 of 7 approved (4 needed), 3 rejected, 1 did not vote');
+  });
+
   it('does not alert on a decision that was simply made', () => {
     const decision = decide(5, 3, 2);
     expect(decision.outcome).toBe('execute');
