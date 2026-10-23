@@ -9,6 +9,7 @@ export * from './masking/masker.js';
 export * from './gate/glob.js';
 export * from './gate/policy.js';
 export * from './gate/gate.js';
+export * from './panel/panel.js';
 export * from './executor/executor.js';
 export * from './pipeline/jsonl.js';
 export * from './pipeline/throttle.js';
