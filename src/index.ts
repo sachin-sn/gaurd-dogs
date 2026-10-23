@@ -24,3 +24,5 @@ export * from './dogs/prompt.js';
 export * from './dogs/model-dog.js';
 export * from './dogs/triage.js';
 export * from './dogs/investigator.js';
+export * from './orchestrator/incidents.js';
+export * from './orchestrator/orchestrator.js';
