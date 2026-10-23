@@ -38,6 +38,7 @@ export type GateCode =
   | 'panel-split'
   | 'panel-not-diverse'
   // Information.
+  | 'minority-flag'
   | 'automatic-level-1-2'
   | 'panel-approved'
   | 'human-approved'
@@ -57,6 +58,7 @@ const REASONS: Readonly<Record<GateCode, string>> = {
   'target-out-of-scope': 'The target is outside the scope policy pre-approves for this kind of action.',
   'protected-target': 'The target is protected and is never contained automatically.',
   'panel-split': 'The panel did not agree.',
+  'minority-flag': 'Several guard dogs flagged this, too few to act on. A human should look.',
   'panel-not-diverse': 'The panel agreed, but the approving guard dogs share one model.',
   'automatic-level-1-2': 'Observe and alert actions run automatically and are always reported.',
   'panel-approved': 'The panel agreed.',
@@ -80,11 +82,23 @@ export interface GateContext {
   humanApproval?: HumanApproval;
 }
 
+/** How the panel voted. Dogs that abstained or did not answer are counted in `silent`. */
+export interface VoteCount {
+  approve: number;
+  reject: number;
+  silent: number;
+  /** Approvals needed to act. */
+  required: number;
+  panelSize: number;
+}
+
 export interface GateDecision {
   outcome: GateOutcome;
   actionId: string;
   digest: string | null;
   level: ResponseLevel | null;
+  /** Null when the proposal was not put to a vote (level 1 and 2, or an untrustworthy vote list). */
+  votes: VoteCount | null;
   codes: GateCode[];
   reasons: string[];
   /** When a level 3 containment must be undone. Set only for `execute` with a duration. */
@@ -125,6 +139,7 @@ interface Tally {
   hard: GateCode[];
   soft: GateCode[];
   info: GateCode[];
+  count?: VoteCount;
 }
 
 function tallyVotes(action: ProposedAction, policy: GatePolicy): Tally {
@@ -149,18 +164,29 @@ function tallyVotes(action: ProposedAction, policy: GatePolicy): Tally {
   }
   if (result.hard.length > 0) return result;
 
+  // Majority of the whole panel, not of the votes that came back: a dog that is
+  // silent or abstains has not agreed.
   const size = policy.panel.size;
   const required = policy.rule === 'unanimous' ? size : Math.floor(size / 2) + 1;
+  result.count = {
+    approve: approving.length,
+    reject: rejecting,
+    silent: size - approving.length - rejecting,
+    required,
+    panelSize: size,
+  };
 
   if (approving.length >= required) {
     const models = new Set(approving.map((member) => member.model));
     if (policy.requireDistinctModels && models.size < 2) result.soft.push('panel-not-diverse');
     else result.info.push('panel-approved');
-  } else if (rejecting >= required) {
-    result.hard.push('panel-rejected');
-  } else {
-    result.soft.push('panel-split');
+    return result;
   }
+
+  if (rejecting >= required) result.hard.push('panel-rejected');
+  else result.soft.push('panel-split');
+  // Not enough to act, but too many to ignore: tell a human even though nothing runs.
+  if (approving.length >= policy.dissentAlertMin) result.info.push('minority-flag');
   return result;
 }
 
@@ -182,7 +208,15 @@ function approvalIsValid(
 
 function build(
   outcome: GateOutcome,
-  parts: { actionId: string; digest: string | null; level: ResponseLevel | null; codes: GateCode[]; summary: string; expiresAt?: string },
+  parts: {
+    actionId: string;
+    digest: string | null;
+    level: ResponseLevel | null;
+    votes?: VoteCount;
+    codes: GateCode[];
+    summary: string;
+    expiresAt?: string;
+  },
 ): GateDecision {
   const unique = [...new Set(parts.codes)];
   return {
@@ -190,6 +224,7 @@ function build(
     actionId: parts.actionId,
     digest: parts.digest,
     level: parts.level,
+    votes: parts.votes ?? null,
     codes: unique,
     reasons: unique.map((code) => REASONS[code]),
     ...(parts.expiresAt === undefined ? {} : { expiresAt: parts.expiresAt }),
@@ -221,6 +256,7 @@ export function evaluateAction(raw: unknown, ctx: GateContext, policy: GatePolic
   const hard: GateCode[] = [];
   const soft: GateCode[] = [];
   const info: GateCode[] = [];
+  let count: VoteCount | undefined;
 
   if (action.level < MIN_LEVEL[action.kind]) hard.push('kind-level-mismatch');
 
@@ -242,6 +278,7 @@ export function evaluateAction(raw: unknown, ctx: GateContext, policy: GatePolic
     }
 
     const votes = tallyVotes(action, policy);
+    count = votes.count;
     hard.push(...votes.hard);
     soft.push(...votes.soft);
     info.push(...votes.info);
@@ -264,11 +301,25 @@ export function evaluateAction(raw: unknown, ctx: GateContext, policy: GatePolic
   if (approval === true) info.push('human-approved');
   if (approval === false) info.push('invalid-approval');
 
+  const flagged = info.includes('minority-flag');
+  const panelNote =
+    count === undefined
+      ? ''
+      : `Panel: ${count.approve} of ${count.panelSize} approved (${count.required} needed), ` +
+        `${count.reject} rejected, ${count.silent} did not vote. `;
   const summaryFor = (outcome: GateOutcome): string =>
+    (flagged ? 'Review needed: ' : '') +
     `Level ${action.level} ${action.kind} on ${sanitizeEvidence(action.target, 80)}: ${OUTCOME_TEXT[outcome]}. ` +
+    panelNote +
+    (flagged ? 'Several guard dogs flagged this, too few to act on. ' : '') +
     `Reason given: ${sanitizeEvidence(action.reason, 160)}`;
 
-  const base = { actionId: sanitizeEvidence(action.id, 128), digest, level: action.level };
+  const base = {
+    actionId: sanitizeEvidence(action.id, 128),
+    digest,
+    level: action.level,
+    ...(count === undefined ? {} : { votes: count }),
+  };
 
   if (hard.length > 0) {
     return build('deny', { ...base, codes: [...hard, ...soft, ...info], summary: summaryFor('deny') });
@@ -296,6 +347,7 @@ export function auditDecision(log: Pick<AuditLog, 'append'>, decision: GateDecis
       actionId: decision.actionId,
       digest: decision.digest,
       level: decision.level,
+      votes: decision.votes === null ? null : { ...decision.votes },
       outcome: decision.outcome,
       codes: decision.codes,
       expiresAt: decision.expiresAt ?? null,

@@ -23,6 +23,15 @@ const PRE_APPROVABLE: readonly ActionKind[] = [
   'contain.quarantine-file',
 ];
 
+/**
+ * The most guard dogs one panel may have. Every member is a model call that the
+ * decision waits on, and beyond a handful the extra votes add little: if each
+ * dog errs independently 20% of the time, a majority is right about 90% of the
+ * time with 3, 94% with 5, 97% with 7 and 98% with 9. Dogs that share a model
+ * do not err independently, so more of them buys even less.
+ */
+export const MAX_PANEL_SIZE = 9;
+
 export interface PanelMember {
   id: string;
   /** The model behind this guard dog. Panels should not all share one. */
@@ -39,13 +48,21 @@ export interface PreApproval {
 }
 
 export interface GatePolicyInput {
-  /** The panel: at least two guard dogs with distinct ids. */
+  /** The panel: two to nine guard dogs with distinct ids. Odd sizes avoid ties. */
   panel: readonly PanelMember[];
   /**
-   * How votes combine. Default: unanimous for a panel of two, majority for
-   * three or more. A split always goes to a human.
+   * How votes combine. Default 'majority' of the whole panel, so silent and
+   * abstaining dogs count as not agreeing: 2 of 2, 2 of 3, 3 of 5, 4 of 7.
+   * 'unanimous' is stricter. If the panel does not agree, nothing runs.
    */
   rule?: 'unanimous' | 'majority';
+  /**
+   * When fewer dogs approve than a majority, but at least this many did, the
+   * proposal is still not acted on, but a human is alerted that a minority
+   * flagged it. Default: a third of the panel, and never fewer than two, so
+   * 2 of 5 and 3 of 7 raise the alert and one lone dog does not.
+   */
+  dissentAlertMin?: number;
   /** Require the approving members to span at least two models. Default true. */
   requireDistinctModels?: boolean;
   /** Level 3 actions that may run automatically, per kind. Anything else waits for a human. */
@@ -64,6 +81,7 @@ export interface GatePolicyInput {
 export interface GatePolicy {
   readonly panel: ReadonlyMap<string, PanelMember>;
   readonly rule: 'unanimous' | 'majority';
+  readonly dissentAlertMin: number;
   readonly requireDistinctModels: boolean;
   readonly preApproved: Readonly<Partial<Record<ActionKind, PreApproval>>>;
   readonly protectedTargets: readonly string[];
@@ -92,10 +110,15 @@ export function createGatePolicy(input: GatePolicyInput): GatePolicy {
     panel.set(member.id, { ...member });
   }
   if (panel.size < 2) throw new RangeError('a panel needs at least two guard dogs');
+  if (panel.size > MAX_PANEL_SIZE) {
+    throw new RangeError(`a panel is limited to ${MAX_PANEL_SIZE} guard dogs: each one is a model call the decision waits on`);
+  }
 
-  const rule = input.rule ?? (panel.size === 2 ? 'unanimous' : 'majority');
-  if (panel.size === 2 && rule === 'majority') {
-    throw new RangeError('majority voting needs a panel of at least three; use unanimous for two');
+  const rule = input.rule ?? 'majority';
+
+  const dissentAlertMin = input.dissentAlertMin ?? Math.max(2, Math.ceil(panel.size / 3));
+  if (!Number.isInteger(dissentAlertMin) || dissentAlertMin < 1 || dissentAlertMin > panel.size) {
+    throw new RangeError('dissentAlertMin must be a whole number from 1 to the size of the panel');
   }
 
   const preApproved: Partial<Record<ActionKind, PreApproval>> = {};
@@ -125,6 +148,7 @@ export function createGatePolicy(input: GatePolicyInput): GatePolicy {
   return {
     panel,
     rule,
+    dissentAlertMin,
     requireDistinctModels: input.requireDistinctModels ?? true,
     preApproved,
     protectedTargets,
