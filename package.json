@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sachin-sn/gaurd-dogs.git"
+    "url": "git+https://github.com/sachin-sn/guard-dogs.git"
   },
   "engines": {
     "node": ">=22"

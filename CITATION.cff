@@ -10,7 +10,7 @@ abstract: >-
   panel-approved actions that keep humans in the loop. Early research prototype.
 authors:
   - alias: sachin-sn
-repository-code: "https://github.com/sachin-sn/gaurd-dogs"
+repository-code: "https://github.com/sachin-sn/guard-dogs"
 license: Apache-2.0
 keywords:
   - security
