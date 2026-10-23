@@ -161,6 +161,17 @@ describe('level 3 containment', () => {
       expect(decision.codes).toContain(code);
     });
 
+    it('a 1-1 split waits for a human: a decision, not an accident', () => {
+      // Decided with the maintainer: on a pair, disagreement is not a reason to deny. A person looks.
+      const decision = evaluateAction(level3({ votes: votes('approve', 'reject') }), ctx(), policy());
+      expect(decision.outcome).toBe('await-human');
+      expect(decision.codes).toContain('panel-split');
+      expect(decision.notify.summary).toContain('waiting for a human');
+      // One approval of two is not the minority alert, which is for panels where a minority is meaningful.
+      expect(decision.codes).not.toContain('minority-flag');
+      expect(decision.notify.summary.startsWith('Review needed')).toBe(false);
+    });
+
     it('sends an agreeing panel that shares one model to a human', () => {
       const sameModel = policy({ panel: panel2.map((m) => ({ ...m, model: 'model-x' })) });
       const decision = evaluateAction(level3(), ctx(), sameModel);

@@ -82,11 +82,12 @@ flowchart LR
 | `src/masking/` | **Log masking.** Removes secrets, tokens, emails and card numbers, and replaces client IPs with keyed pseudonyms, before an event reaches tier 1 or any model. Only `maskEvent` produces `masked: true`. | Tested |
 | `src/gate/` | **Response gate.** Decides what happens to a proposed action: run, wait for a human, or deny. Enforces the response levels, panel voting with distinct members and models, pre-approved scopes, protected targets, intel ceilings, and human approvals tied to the exact action. It executes nothing itself. | Tested |
 | `src/panel/` | **Panel runner.** Puts a case to every guard dog on the panel in parallel, each with its own evidence view, under one deadline. A dog that is slow, fails or answers nonsense is an abstention, not a yes. Stops early only when no outstanding vote could change the gate's verdict. Votes attach only to the exact action that was reviewed. The dogs themselves plug in through a small interface. | Tested |
+| `src/models/` | **Model registry and panel planner.** The only models a guard dog may call, each with one validated HTTPS endpoint. Plans which model sits behind which seat (providers and families spread, data handling per view), derives the egress allow-list from the models in use, and reports what a panel depends on. Configuration decides; a dog or the evidence never does. | Tested |
 | `src/executor/` | **Executor.** The only way a proposal becomes a change. Audits before acting and fails closed, expires and reverts containment, limits how much automatic containment can run, refuses a repeated action id, and recovers its state from the audit log after a restart. Real controls plug in as adapters. | Tested |
 | `src/pipeline/` | **Sidecar pipeline.** Takes raw events and staged informer records and runs them through masking, tier 1, alert throttling and the executor. Caps how many different alerts go out per window, so fabricated events cannot bury a real alert. Gives the gate a per-proposal snapshot of the evidence it may cite. Includes a bounded JSONL reader. | Tested |
 | `fixtures/` | Synthetic records, events and actions. Nothing here is a real advisory or a working exploit. | |
 
-Not built yet: the sidecar processes themselves (tailing logs and shipping events to the pipeline), the panel runner, tier 2 and tier 3, the investigator agents that make up the panel, the probe patrol, and the evaluation testbed.
+Not built yet: the sidecar processes themselves (tailing logs and shipping events to the pipeline), the guard dogs that call models (tier 2 triage and the tier 3 panel members), the probe patrol, and the evaluation testbed.
 
 ## Quick start
 
