@@ -1,0 +1,15 @@
+{
+  "id": "act-0003",
+  "proposedBy": "dog-a",
+  "level": 4,
+  "kind": "contain.isolate-service",
+  "target": "shop-web",
+  "reason": "Disruptive actions must wait for a human.",
+  "evidence": ["evt-0001"],
+  "createdAt": "2026-10-23T10:16:00Z",
+  "requiresHumanApproval": false,
+  "votes": [
+    { "voter": "dog-a", "decision": "approve" },
+    { "voter": "dog-b", "decision": "approve" }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:guard-dogs:schema:event:v0",
+  "title": "GuardDogEvent",
+  "description": "A masked, normalised observation emitted by a sidecar. Events are attacker-influenced data: every string field is untrusted. Sidecars must mask secrets and personal data before emitting; `masked: true` is the sidecar's attestation that this happened.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "ts", "layer", "service", "kind", "attrs", "masked"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "ts": { "type": "string", "format": "date-time" },
+    "layer": { "enum": ["edge", "application", "data", "internal"] },
+    "service": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "kind": {
+      "enum": [
+        "file.created",
+        "file.modified",
+        "process.spawned",
+        "net.outbound",
+        "http.request",
+        "llm.call",
+        "mcp.call",
+        "control.verdict"
+      ]
+    },
+    "traceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "attrs": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": { "maxLength": 64 },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "maxLength": 2048 },
+          { "type": "number" },
+          { "type": "boolean" }
+        ]
+      }
+    },
+    "masked": { "const": true }
+  }
+}
