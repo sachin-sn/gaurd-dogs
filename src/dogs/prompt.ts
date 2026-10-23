@@ -45,7 +45,7 @@ export interface VotePrompt {
 }
 
 /** Write JSON so that it cannot contain a tag: `<` and `>` become escapes, still valid JSON. */
-function safeJson(value: unknown): string {
+export function safeJson(value: unknown): string {
   let text: string | undefined;
   try {
     text = JSON.stringify(value);
@@ -55,7 +55,7 @@ function safeJson(value: unknown): string {
   return (text ?? 'null').replace(/[<>\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
 }
 
-const clip = (value: unknown, max: number): string => (typeof value === 'string' ? sanitizeEvidence(value, max) : '');
+export const clip = (value: unknown, max: number): string => (typeof value === 'string' ? sanitizeEvidence(value, max) : '');
 
 export function newNonce(): string {
   return randomBytes(12).toString('hex');
