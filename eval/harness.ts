@@ -41,7 +41,7 @@ import {
 import type { Containment, Scenario } from './scenario.js';
 import { truthOf, type ModelProfile, type Role } from './sim.js';
 
-/** Monday 12:00 UTC. A multiple of fifteen minutes, so incident windows start where a scenario does. */
+/** Monday 12:00 UTC. */
 const START = Date.parse('2026-10-26T12:00:00Z');
 const PSEUDONYM_KEY = 'evaluation-key-evaluation-key-0123';
 /** How long after the last event the harness lets containments run out. */
@@ -76,6 +76,12 @@ export interface Applied {
   at: number;
 }
 
+export interface Reverted {
+  id: string;
+  /** Seconds after the scenario began. */
+  at: number;
+}
+
 export interface Hit {
   eventId: string;
   ruleId: string;
@@ -95,7 +101,7 @@ export interface RunRecord {
   submissions: Submission[];
   /** Containments (level 3 and 4) that a control adapter was asked to apply. */
   applied: Applied[];
-  reverted: string[];
+  reverted: Reverted[];
   notifications: Notification[];
   calls: Call[];
   /** The whole audit log as text, for checking that nothing sensitive reached it. */
@@ -186,14 +192,14 @@ async function run(scenario: Scenario, profile: ModelProfile, options: HarnessOp
 
   const log = AuditLog.open(path.join(dir, 'audit.jsonl'), { clock });
   const applied: Applied[] = [];
-  const reverted: string[] = [];
+  const reverted: Reverted[] = [];
   const control: ControlAdapter = {
     async apply(action) {
       if (CONTAINMENT_KINDS.includes(action.kind)) applied.push({ id: action.id, kind: action.kind, target: action.target, at: seconds() });
       return { handle: { id: action.id } };
     },
     async revert(_handle, info) {
-      reverted.push(info.actionId);
+      reverted.push({ id: info.actionId, at: seconds() });
     },
   };
   const notifications: Notification[] = [];

@@ -83,6 +83,10 @@ These came from writing the scenarios, and each is fixed or recorded.
 2. **A second incident repeats a containment that is already in place.** In `upload-shell-callback-chain` the spawn incident proposes quarantining the file the upload incident already quarantined. The panel is asked again (three more calls) and the executor then refuses it as rate-limited, because the target already has an active containment. Harmless, but wasted. The orchestrator's memory of handled proposals is keyed by proposal id; keying it by kind and target would skip the review. Not changed here.
 3. **A containment aimed at a client names a pseudonym.** The pipeline pseudonymises client addresses with a keyed hash, which cannot be reversed, so a `contain.block-source` on a client names `ip_...` and the host's control adapter needs its own table from pseudonym to address. Models never hold it. The sidecar work has to provide it.
 
+## How the testbed itself is checked
+
+The tests hold the corpus to `checkScenario`, hold the oracle to the outcome each scenario says it should reach, and score hand-made run records so that every measure can be seen to move (a measure that is always zero in real runs would otherwise prove nothing). A first sweep of 50 deliberate breakages of the scoring, the harness, the simulated models and the summaries found 31 that the tests did not catch, mostly because the safety measures read zero in every real run; the hand-made records and the direct tests of the simulated models were added for that. A second sweep of 54 found 3. One was a rate whose two readings happened to agree on the test data, now fixed. The other two change nothing the corpus can show: the clock's start time, which would matter only if events fell near an incident-window boundary, and the harness counting only containments as applied, when no scenario triggers any other action that a control adapter would see.
+
 ## Threats to validity
 
 - **Simulated models.** Stated above. Nothing here is evidence about how real models behave.

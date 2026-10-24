@@ -88,7 +88,7 @@ export function score(run: RunRecord): Score {
     forbiddenHits,
     unoffered,
     secondsToContain: firstRight === undefined ? undefined : firstRight - firstMalicious,
-    neverReverted: [...appliedIds].filter((id) => !run.reverted.includes(id)).length,
+    neverReverted: [...appliedIds].filter((id) => !run.reverted.some((entry) => entry.id === id)).length,
     humanNotified: run.notifications.length > 0,
     calls: { triage: count('triage'), investigator: count('investigator'), dog: count('dog') },
     leaks,

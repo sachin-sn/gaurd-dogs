@@ -86,7 +86,8 @@ function option(args: readonly string[], name: string): string[] {
   return values;
 }
 
-async function main(args: readonly string[]): Promise<void> {
+/** The command line. `print` is where the report goes. */
+export async function main(args: readonly string[], print: (line: string) => void = console.log): Promise<void> {
   const profileIds = option(args, '--profile');
   const scenarioIds = option(args, '--scenario');
   const chosenProfiles = profileIds.length === 0 ? allProfiles : allProfiles.filter((profile) => profileIds.includes(profile.id));
@@ -94,13 +95,13 @@ async function main(args: readonly string[]): Promise<void> {
   if (chosenProfiles.length === 0 || chosenScenarios.length === 0) throw new Error('no profile or scenario matches those names');
 
   const evaluation = await evaluate({ profiles: chosenProfiles, scenarios: chosenScenarios });
-  console.log('OFFLINE EVALUATION. The models are simulated; the numbers describe the system around them.');
-  for (const line of render(evaluation)) console.log(line);
+  print('OFFLINE EVALUATION. The models are simulated; the numbers describe the system around them.');
+  for (const line of render(evaluation)) print(line);
 
   const out = option(args, '--json')[0];
   if (out !== undefined) {
     fs.writeFileSync(out, `${JSON.stringify(evaluation, null, 2)}\n`);
-    console.log(`\nwrote ${out}`);
+    print(`\nwrote ${out}`);
   }
 }
 
