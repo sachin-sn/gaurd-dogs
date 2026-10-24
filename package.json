@@ -16,6 +16,7 @@
   "files": [
     "dist",
     "!dist/examples",
+    "!dist/eval",
     "schemas"
   ],
   "scripts": {
@@ -24,7 +25,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm test",
-    "demo": "npm run build && node dist/examples/demo.js"
+    "demo": "npm run build && node dist/examples/demo.js",
+    "eval": "npm run build && node dist/eval/run.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

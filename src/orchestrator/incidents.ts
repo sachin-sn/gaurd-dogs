@@ -194,20 +194,34 @@ export function rawView(c: Case): unknown {
   return c.evidence.map((entry) => ({ id: entry.id, content: entry.content }));
 }
 
+const MAX_BRIEF_KEYS = 8;
+const MAX_FLAGGED_KEYS = 4;
+
 /**
- * A short form of each piece of evidence: its id and the plain values at the
- * top level of its content, trimmed. A dog that sees only this has a different
- * view from one that reads the raw events, so a payload written to fool one
- * reader is less likely to fool both.
+ * A short form of each piece of evidence: its id, the plain values at the top
+ * level of its content, and the plain values the rule itself pulled out (the
+ * path, the host, the process), all trimmed. A dog that sees only this has a
+ * different view from one that reads the raw events, so a payload written to
+ * fool one reader is less likely to fool both. It still names what the rule
+ * found: without that, a reviewer could not tell whether a proposal is aimed
+ * at the right thing.
  */
 export function summaryView(c: Case): unknown {
   return c.evidence.map((entry) => {
     const brief: [string, string | number | boolean][] = [];
     const content = entry.content;
     if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
-      for (const [key, value] of Object.entries(content).slice(0, 8)) {
+      for (const [key, value] of Object.entries(content).slice(0, MAX_BRIEF_KEYS)) {
         if (typeof value === 'string') brief.push([sanitizeEvidence(key, 40), sanitizeEvidence(value, 80)]);
         else if (typeof value === 'number' || typeof value === 'boolean') brief.push([sanitizeEvidence(key, 40), value]);
+      }
+      const flagged = (content as { flagged?: unknown }).flagged;
+      if (typeof flagged === 'object' && flagged !== null && !Array.isArray(flagged)) {
+        for (const [key, value] of Object.entries(flagged).slice(0, MAX_FLAGGED_KEYS)) {
+          const name = `flagged.${sanitizeEvidence(key, 30)}`;
+          if (typeof value === 'string') brief.push([name, sanitizeEvidence(value, 80)]);
+          else if (typeof value === 'number' || typeof value === 'boolean') brief.push([name, value]);
+        }
       }
     }
     // The id goes last, so nothing in the content can overwrite it.

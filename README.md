@@ -90,9 +90,10 @@ flowchart LR
 | `src/executor/` | **Executor.** The only way a proposal becomes a change. Audits before acting and fails closed, expires and reverts containment, limits how much automatic containment can run, refuses a repeated action id, and recovers its state from the audit log after a restart. Real controls plug in as adapters. | Tested |
 | `src/pipeline/` | **Sidecar pipeline.** Takes raw events and staged informer records and runs them through masking, tier 1, alert throttling and the executor. Caps how many different alerts go out per window, so fabricated events cannot bury a real alert. Gives the gate a per-proposal snapshot of the evidence it may cite. Includes a bounded JSONL reader. | Tested |
 | `examples/demo.ts` | **Offline demo.** The whole flow end to end with scripted stand-in dogs. Also run by the tests. | Tested |
+| `eval/` | **Evaluation testbed.** A labelled corpus of 18 attack, evasion, injection, noise and benign scenarios, run through the real stack with simulated models, and scored. See [docs/evaluation.md](docs/evaluation.md). `npm run eval`. | Tested; simulated models only |
 | `fixtures/` | Synthetic records, events and actions. Nothing here is a real advisory or a working exploit. | |
 
-Not built yet: the sidecar processes themselves (tailing logs and shipping events to the pipeline), the probe patrol, and the evaluation testbed.
+Not built yet: the sidecar processes themselves (tailing logs and shipping events to the pipeline), the probe patrol, models that fail in worse ways for the evaluation, and an evaluation run against live models.
 
 ## Quick start
 

@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/**/*", "test/**/*", "examples/**/*", "schemas/*.json"]
+  "include": ["src/**/*", "test/**/*", "examples/**/*", "eval/**/*", "schemas/*.json"]
 }
