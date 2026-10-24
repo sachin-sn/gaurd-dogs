@@ -42,7 +42,23 @@ export interface PipelineOptions {
   maxKnownEvidence?: number;
   /** Most events processed per batch; the rest are counted and dropped. Default 10,000. */
   maxBatch?: number;
+  /** Most flagged events handed back in one report (see `EventReport.flagged`). Default 200; 0 hands back none. */
+  maxFlagged?: number;
   clock?: () => Date;
+}
+
+/** A tier 1 hit together with the masked event that caused it, for the stages that look closer. */
+export interface FlaggedHit {
+  hit: RuleHit;
+  /** The event as the rest of the system sees it: masked, never the raw wire copy. */
+  event: GuardDogEvent;
+  /**
+   * What became of the alert for it: `sent` (given to the executor),
+   * `duplicate` (an identical alert went out recently) or `flood` (beyond the
+   * cap on different alerts per window). A hit that raised no alert of its own
+   * is still real evidence, so it is still listed.
+   */
+  alert: 'sent' | 'duplicate' | 'flood';
 }
 
 export interface EventReport {
@@ -57,6 +73,13 @@ export interface EventReport {
   /** What the masker removed, in total. Counts only. */
   masked: MaskReport;
   hits: number;
+  /**
+   * The hits of this batch with their masked events, most severe first. At most
+   * `maxFlagged`; the number left out is in `flaggedDropped`. Every hit is
+   * still counted in `hits` and alerted on whether or not it is listed here.
+   */
+  flagged: FlaggedHit[];
+  flaggedDropped: number;
   /** Alerts not sent: repeats of one already sent, and alerts beyond the global cap. */
   suppressed: { duplicate: number; flood: number };
   ruleErrors: number;
@@ -124,6 +147,7 @@ export class Pipeline {
   private readonly proposer: string;
   private readonly maxKnownEvidence: number;
   private readonly maxBatch: number;
+  private readonly maxFlagged: number;
   private readonly clock: () => Date;
 
   /** Events and records that may be cited as evidence, oldest first. */
@@ -146,6 +170,10 @@ export class Pipeline {
     this.proposer = options.proposer ?? 'tier1';
     this.maxKnownEvidence = options.maxKnownEvidence ?? 10_000;
     this.maxBatch = options.maxBatch ?? 10_000;
+    this.maxFlagged = options.maxFlagged ?? 200;
+    if (!Number.isInteger(this.maxFlagged) || this.maxFlagged < 0 || this.maxFlagged > 10_000) {
+      throw new RangeError('maxFlagged must be a whole number from 0 to 10000');
+    }
     this.clock = options.clock ?? (() => new Date());
   }
 
@@ -176,6 +204,8 @@ export class Pipeline {
       rejectedSamples: [],
       masked: {},
       hits: 0,
+      flagged: [],
+      flaggedDropped: 0,
       suppressed: { duplicate: 0, flood: 0 },
       ruleErrors: 0,
       proposals: {},
@@ -184,6 +214,7 @@ export class Pipeline {
 
     const events: GuardDogEvent[] = [];
     const serviceOf = new Map<string, string>();
+    const eventById = new Map<string, GuardDogEvent>();
     for (const item of batch) {
       const masked = this.mask(item);
       if (!masked.ok) {
@@ -195,6 +226,7 @@ export class Pipeline {
       }
       events.push(masked.event);
       serviceOf.set(masked.event.id, masked.event.service);
+      eventById.set(masked.event.id, masked.event);
       this.remember(masked.event.id);
       for (const [kind, n] of Object.entries(masked.report) as [keyof MaskReport, number][]) {
         report.masked[kind] = (report.masked[kind] ?? 0) + n;
@@ -209,6 +241,7 @@ export class Pipeline {
     for (const hit of tier1.hits) {
       const service = serviceOf.get(hit.eventId) ?? 'unknown';
       const admission = this.throttle.admit(`${hit.ruleId}|${service}`, now.getTime());
+      this.flag(report, hit, eventById.get(hit.eventId), admission.admit ? 'sent' : admission.reason);
 
       if (admission.admit) {
         const result = await this.executor.submit(this.alertFor(hit, service, admission.suppressedBefore, now));
@@ -319,6 +352,13 @@ export class Pipeline {
     } catch (error) {
       return { ok: false, eventId: id, reason: sanitizeEvidence(error instanceof Error ? error.message : String(error), 200) };
     }
+  }
+
+  private flag(report: EventReport, hit: RuleHit, event: GuardDogEvent | undefined, alert: FlaggedHit['alert']): void {
+    // Every hit comes from an event in this batch, so a missing one means nothing to show.
+    if (event === undefined) return;
+    if (report.flagged.length >= this.maxFlagged) report.flaggedDropped++;
+    else report.flagged.push({ hit, event, alert });
   }
 
   private remember(id: string): void {

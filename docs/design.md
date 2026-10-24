@@ -223,6 +223,8 @@ investigator  -> proposal + evidence snapshot ----------------------------> exec
 
 **Audit.** Each batch with anything notable writes one `pipeline.events` or `pipeline.advisories` entry: counts only, never event content. If that write fails the report says `audited: false` and the alerts still go out. Losing a summary must not silence an alert.
 
+**Flagged hits.** The pipeline's report lists each tier 1 hit with the event that caused it (`flagged`), most severe first, so the later stages can look closer than a count allows. The event is the masked copy the pipeline itself made, never the wire copy. Each entry also says what became of its alert: `sent`, `duplicate` or `flood`. A hit whose alert was held back is still real evidence, so it is still listed. The list is capped by `maxFlagged` (default 200, the excess counted in `flaggedDropped`); the cap bounds what the later, more expensive stages are offered, and changes nothing about alerting. The audit entry still holds counts only.
+
 **Bounds.** A batch is capped (default 10,000 events; the excess is counted as dropped), the JSONL reader caps line count and line length, and the throttle and the evidence set are bounded. `stats()` reports their sizes.
 
 ## Trust boundary for informer records
