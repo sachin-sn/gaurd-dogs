@@ -7,8 +7,10 @@
  * scripted stand-ins whose votes are set per scene, so the demo can show how
  * the machinery around them behaves: planning a mixed panel, masking and
  * throttling events, voting with early decisions and timeouts, the response
- * gate, the executor, a human approval, and expiry. Everything the dogs
- * vote on is synthetic.
+ * gate, the executor, a human approval, and expiry. One scene runs the whole
+ * chain, from flagged events through triage, the investigators and the panel
+ * to containment, with scripted replies where a model would answer. Everything
+ * the dogs vote on is synthetic.
  */
 
 import fs from 'node:fs';
@@ -18,8 +20,11 @@ import { pathToFileURL } from 'node:url';
 import {
   AuditLog,
   Executor,
+  Investigator,
+  Orchestrator,
   Panel,
   Pipeline,
+  TriageDog,
   actionDigest,
   analyzePanel,
   createGatePolicy,
@@ -27,10 +32,15 @@ import {
   createModelRegistry,
   defaultRulesConfig,
   planPanel,
+  rawView,
+  summaryView,
   withVotes,
+  type Case,
   type ControlAdapter,
+  type CycleReport,
   type Dog,
   type DogOpinion,
+  type ModelClient,
   type Notification,
   type PanelMember,
   type PanelResult,
@@ -53,6 +63,10 @@ export interface DemoResult {
   scenes: Record<string, SceneOutcome>;
   /** After the human approved the scene that waited for one. */
   humanApproved: SubmitStatus | undefined;
+  /** What the orchestrator did with the flagged events of the chain scene. */
+  chain: CycleReport;
+  /** The id of the proposal the chain scene had applied. */
+  chainAction: string | undefined;
   notifications: Notification[];
   applied: string[];
   reverted: string[];
@@ -308,14 +322,65 @@ async function run(write: (line: string) => void, dir: string, deadlineMs: numbe
     { target: 'shop-web:/api', evidence: ['GD-EXAMPLE-0001'] },
   );
 
+  // ---- the whole chain ---------------------------------------------------------------
+  heading('8. The whole chain: flagged events in, containment out, nothing hand-fed');
+  script = { 'dog-1': answer('approve', 20), 'dog-2': answer('approve', 30), 'dog-3': answer('approve', 40), 'dog-4': answer('approve', 50) };
+  // Where a model would answer, a scripted reply does. Each one goes through the real prompt, parser and checks.
+  const standIn = (modelId: string, reply: (user: string) => string): ModelClient => ({
+    model: registry.require(modelId),
+    complete: async (request) => reply(request.user),
+  });
+  const triage = new TriageDog({
+    clients: [
+      standIn('cinder-large', (user) => {
+        const ids = [...user.matchAll(/"id":\s*"(inc:[^"]+)"/g)].map((m) => m[1] as string);
+        return JSON.stringify({ results: ids.map((id) => ({ id, decision: 'escalate', reason: 'a script in the web root' })) });
+      }),
+    ],
+    log,
+  });
+  const propose = (reason: string) => () =>
+    JSON.stringify({
+      decision: 'propose',
+      kind: 'contain.rate-limit',
+      target: 'shop-web:/media',
+      evidence: ['evt-200'],
+      ttlSeconds: 900,
+      reason,
+    });
+  const orchestrator = new Orchestrator({
+    pipeline,
+    policy,
+    panel,
+    triage,
+    investigators: [
+      new Investigator({ id: 'investigator-1', client: standIn('acme-large', propose('Scripts keep landing in the upload directory.')), maxTtlSeconds: 1800, log, clock: clock.now }),
+      new Investigator({ id: 'investigator-2', client: standIn('borealis-large', propose('Repeated executable uploads from one place.')), maxTtlSeconds: 1800, log, clock: clock.now }),
+    ],
+    // What may be touched is fixed by the deployer (here, the route that serves the uploaded files), not read from the events: an attacker cannot name a target.
+    targets: (incident) => [{ target: `${incident.service}:/media`, kinds: ['contain.rate-limit'] }],
+    views: { 'raw-logs': rawView, summaries: summaryView, timeline: (c: Case) => c.evidence.map((entry, i) => ({ step: i + 1, id: entry.id })) },
+    log,
+    clock: clock.now,
+  });
+  const { events: chainEvents, response: chain } = await orchestrator.process(['evt-200', 'evt-201', 'evt-202'].map(upload));
+  write(`  tier 1 flagged ${chainEvents.flagged.length} events; ${chain.incidents} incident`);
+  write(`  triage: ${chain.triage?.escalated ?? 0} escalated, ${chain.triage?.routine ?? 0} routine`);
+  write(`  investigators: ${chain.investigations.proposal} proposed, ${chain.investigations.noAction} saw nothing, ${chain.investigations.failed + chain.investigations.errors} failed`);
+  write(`  proposals: ${chain.proposals.distinct} distinct (the two investigators proposed the same thing, so it is one)`);
+  const chosen = chain.cases[0]?.proposals[0];
+  write(`  panel verdict: ${chosen?.verdict ?? 'none'}; executor: ${chosen?.status ?? 'not submitted'}`);
+  showInbox();
+  clock.advance(10);
+
   // ---- expiry and audit ------------------------------------------------------------
-  heading('8. Time passes: containment expires on its own');
+  heading('9. Time passes: containment expires on its own');
   clock.advance(1200);
   const tick = await executor.tick();
   write(`  reverted: ${tick.reverted.join(', ') || 'none'}`);
   showInbox();
 
-  heading('9. Audit');
+  heading('10. Audit');
   const verify = log.verify();
   const entries = log.entries();
   const types = entries.reduce((c, e) => ({ ...c, [e.type]: (c[e.type] ?? 0) + 1 }), {} as Record<string, number>);
@@ -325,6 +390,8 @@ async function run(write: (line: string) => void, dir: string, deadlineMs: numbe
   return {
     scenes,
     humanApproved: approved.status,
+    chain,
+    chainAction: chosen?.id,
     notifications: everything,
     applied,
     reverted,

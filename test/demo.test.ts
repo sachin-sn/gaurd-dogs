@@ -49,8 +49,23 @@ describe('the demo', () => {
     expect(approval?.summary).toContain('cleared to run');
     expect(approval?.summary).not.toContain('Review needed');
 
+    // The whole chain, with nothing hand-fed: three flagged uploads become one incident, triage escalates it,
+    // both investigators propose the same containment, and the panel clears it.
+    expect(result.chain).toMatchObject({
+      incidents: 1,
+      triage: { escalated: 1, routine: 0 },
+      investigations: { proposal: 2, noAction: 0, failed: 0, errors: 0 },
+      proposals: { distinct: 1, duplicate: 1 },
+      panels: 1,
+      submitted: { applied: 1 },
+      errors: 0,
+    });
+    expect(result.chainAction).toMatch(/^inv:/);
+    expect(result.applied).toContain(result.chainAction);
+    expect(text).toContain('proposals: 1 distinct');
+
     // Containment expires on its own.
-    expect([...result.reverted].sort()).toEqual(['act-down', 'act-swift']);
+    expect([...result.reverted].sort()).toEqual(['act-down', 'act-swift', result.chainAction].sort());
 
     // Everything was recorded, and the record is intact.
     expect(result.auditOk).toBe(true);
