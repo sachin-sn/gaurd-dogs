@@ -294,7 +294,13 @@ describe('a cycle', () => {
     const raw = dogSeen.find((entry) => entry.dog === 'dog-a')?.task.evidence as { id: string; content: { event: unknown } }[];
     const brief = dogSeen.find((entry) => entry.dog === 'dog-b')?.task.evidence as Record<string, unknown>[];
     expect(raw[0]).toMatchObject({ id: 'evt-A', content: { event: { kind: 'file.created' } } });
-    expect(brief[0]).toEqual({ id: 'evt-A', rule: 'drift.webroot-new-executable', severity: 'high', ruleSummary: 'Executable file created in a web root on shop-web.' });
+    expect(brief[0]).toEqual({
+      id: 'evt-A',
+      rule: 'drift.webroot-new-executable',
+      severity: 'high',
+      ruleSummary: 'Executable file created in a web root on shop-web.',
+      'flagged.path': '/var/www/html/uploads/x.php',
+    });
     expect(dogSeen[0]?.task.action).toMatchObject({ kind: 'contain.block-source', target: '203.0.113.9' });
   });
 

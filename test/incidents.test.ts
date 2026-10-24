@@ -298,11 +298,36 @@ describe('the views a dog can be given', () => {
     expect(rawView(built)).toEqual(built.evidence.map((e) => ({ id: e.id, content: e.content })));
   });
 
-  it('summaryView is the id and the plain values at the top of each piece, and nothing nested', () => {
+  it('summaryView is the id, the plain values at the top of each piece and what the rule found, and nothing else nested', () => {
     const summary = summaryView(built) as Record<string, unknown>[];
     expect(summary).toHaveLength(2);
-    expect(summary[0]).toEqual({ id: 'a', rule: 'drift.webroot-new-executable', severity: 'high', ruleSummary: 'Executable file created in a web root on shop-web.' });
+    expect(summary[0]).toEqual({
+      id: 'a',
+      rule: 'drift.webroot-new-executable',
+      severity: 'high',
+      ruleSummary: 'Executable file created in a web root on shop-web.',
+      'flagged.path': '/var/www/html/uploads/x.php',
+    });
+    // The raw event, with its other attributes, is for the raw view only.
     expect(JSON.stringify(summary)).not.toContain('203.0.113.9');
+  });
+
+  it('summaryView takes only plain, trimmed, bounded values from what the rule found', () => {
+    const custom: Case = {
+      id: 'c',
+      summary: 's',
+      targets: TARGETS,
+      evidence: [
+        { id: 'one', content: { flagged: { path: 'p'.repeat(200), n: 3, ok: false, nested: { a: 1 }, list: [1], none: null, f: 'f', g: 'beyond the fourth', 'k\ney': 'v' } } },
+        { id: 'two', content: { flagged: 'not an object' } },
+        { id: 'three', content: { flagged: ['a', 'b'] } },
+        { id: 'four', content: { flagged: null } },
+      ],
+    };
+    const summary = summaryView(custom) as Record<string, unknown>[];
+    expect(summary[0]).toEqual({ 'flagged.path': `${'p'.repeat(79)}…`, 'flagged.n': 3, 'flagged.ok': false, id: 'one' });
+    // A plain `flagged` is just one more top-level value; a list or null adds nothing.
+    expect(summary.slice(1)).toEqual([{ flagged: 'not an object', id: 'two' }, { id: 'three' }, { id: 'four' }]);
   });
 
   it('summaryView cannot have its id overwritten, and keeps within its bounds', () => {
