@@ -110,7 +110,7 @@ Try the whole thing offline:
 npm run demo
 ```
 
-Nothing calls a model or the network. The guard dogs in the demo are scripted stand-ins whose votes are set per scene; the model registry and planner, masking, throttling, panel runner, response gate, executor, human approval and expiry are the real code. It walks through a burst of webshell uploads becoming one alert, four of seven dogs agreeing and the rest being stopped, three against four being rejected while a human is still told, two silent dogs sending a decision to a person, and containment expiring. The tests run it too, so it cannot drift from the code.
+Nothing calls a model or the network. The guard dogs in the demo are scripted stand-ins whose votes are set per scene; the model registry and planner, masking, throttling, triage, investigator, orchestrator, panel runner, response gate, executor, human approval and expiry are the real code, and in the scene that runs the whole chain the triage and investigator models are scripted replies that go through the real prompts and parsers. It walks through a burst of webshell uploads becoming one alert, four of seven dogs agreeing and the rest being stopped, three against four being rejected while a human is still told, two silent dogs sending a decision to a person, the whole chain from flagged events to an applied containment with no hand-fed proposal, and containment expiring. The tests run it too, so it cannot drift from the code.
 
 Use real models. You choose the models and say how to reach each one; the dogs only ever call those.
 
